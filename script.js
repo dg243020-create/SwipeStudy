@@ -232,7 +232,7 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0 };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて" };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
@@ -260,8 +260,21 @@ function shuffle(arr) {
   }
   return a;
 }
+
+// ---------- ジャンル ----------
+// ラベル「【日本史・古代】」の「日本史」の部分をジャンルとして自動で使う。ラベルがなければ「その他」。
+const ALL = "すべて";
+function genreOf(q) {
+  const m = (q.label || "").match(/【(.+?)(?:・.*)?】/);
+  return m ? m[1] : "その他";
+}
+const GENRES = [ALL].concat(Array.from(new Set(QUESTIONS.map(genreOf))));
+if (!GENRES.includes(state.genre)) state.genre = ALL;
+function pool() {
+  return state.genre === ALL ? QUESTIONS : QUESTIONS.filter((q) => genreOf(q) === state.genre);
+}
 function nextQuestion() {
-  if (queue.length === 0) queue = shuffle(QUESTIONS);
+  if (queue.length === 0) queue = shuffle(pool());
   return queue.pop();
 }
 function xpNeeded() { return state.level * 50; }
@@ -328,6 +341,7 @@ function updateHud() {
   $("enemyName").textContent = boss.monster.name;
   $("combo").textContent = "COMBO " + combo;
   $("today").textContent = `今日 ${state.bossesToday}/${BOSSES_PER_DAY}体`;
+  $("genreBtn").textContent = "📚 " + state.genre;
 }
 function gainXp(amount) {
   state.xp += amount;
@@ -499,6 +513,51 @@ function startBoss() {
   const card = addQuestionCard();
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+// ---------- ジャンル切り替え ----------
+function renderGenreSheet() {
+  const list = $("genreList");
+  list.textContent = "";
+  GENRES.forEach((g) => {
+    const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
+    const b = el("button", "genre-item" + (g === state.genre ? " active" : ""), `${g}（${n}問）`);
+    b.type = "button";
+    b.addEventListener("click", () => selectGenre(g));
+    list.appendChild(b);
+  });
+}
+function openGenreSheet() { renderGenreSheet(); $("genreSheet").hidden = false; }
+function closeGenreSheet() { $("genreSheet").hidden = true; }
+
+function rebuildFeed() {
+  observer.disconnect();
+  feed.textContent = "";
+  feed.scrollTop = 0;
+  if (state.bossesToday >= BOSSES_PER_DAY) {
+    showDoneCard();
+    return;
+  }
+  if (boss.hp <= 0) { // ボス撃破画面で切り替えた場合は、新しいボスから始める
+    boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
+    combo = 0;
+  }
+  bossActive = true;
+  updateHud();
+  addQuestionCard();
+}
+function selectGenre(g) {
+  closeGenreSheet();
+  if (g === state.genre) return;
+  state.genre = g;
+  save();
+  queue = [];
+  rebuildFeed();
+  toast("📚 " + g + " に切り替えました");
+}
+$("genreBtn").addEventListener("click", openGenreSheet);
+$("genreClose").addEventListener("click", closeGenreSheet);
+$("genreBackdrop").addEventListener("click", closeGenreSheet);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeGenreSheet(); });
 
 // ---------- キーボード操作（PC用） ----------
 document.addEventListener("keydown", (e) => {
