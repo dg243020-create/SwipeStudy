@@ -15,6 +15,7 @@
         <div class="bar xp"><div id="xpFill" class="fill"></div></div>
       </div>
       <div id="today">今日 0/3体</div>
+      <button id="genreBtn" class="genre-btn" type="button" aria-haspopup="dialog">📚 すべて</button>
     </div>
     <div class="hud-row enemy">
       <span id="enemyEmoji" class="enemy-emoji">👾</span>
@@ -27,6 +28,15 @@
   </header>
 
   <main id="feed" class="swipe-container" aria-live="polite"></main>
+
+  <div id="genreSheet" class="sheet" hidden>
+    <div class="sheet-backdrop" id="genreBackdrop"></div>
+    <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="ジャンルを選ぶ">
+      <div class="sheet-title">ジャンルを選ぶ</div>
+      <div id="genreList" class="genre-list"></div>
+      <button id="genreClose" class="sheet-close" type="button">閉じる</button>
+    </div>
+  </div>
 
   <div id="fx" aria-hidden="true"></div>
   <div id="toast" role="status"></div>
