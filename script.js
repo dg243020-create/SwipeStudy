@@ -692,6 +692,7 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
+  if (typeof window.onGameSaved === "function") { try { window.onGameSaved(); } catch (e) {} }
 }
 
 let state = load();
