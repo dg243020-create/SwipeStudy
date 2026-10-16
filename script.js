@@ -1138,12 +1138,17 @@ document.addEventListener("keydown", (e) => {
 window.gameApi = {
   getSave() { return Object.assign({}, state); },
   applySave(s) {
-    ["level", "xp", "totalDefeated", "bestCombo"].forEach((k) => { if (s[k] !== undefined) state[k] = s[k]; });
-    if (s.date === todayStr()) state.bossesToday = Math.max(state.bossesToday, s.bossesToday || 0);
-    boss.monster = MONSTERS[state.totalDefeated % MONSTERS.length];
+    state.level = s.level || 1;
+    state.xp = s.xp || 0;
+    state.totalDefeated = s.totalDefeated || 0;
+    state.bestCombo = s.bestCombo || 0;
+    state.date = todayStr();
+    state.bossesToday = (s.date === todayStr()) ? (s.bossesToday || 0) : 0;
+    boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
+    combo = 0;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
     updateHud();
-    if (state.bossesToday >= BOSSES_PER_DAY) rebuildFeed();
+    rebuildFeed();
   }
 };
 
