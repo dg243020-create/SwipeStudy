@@ -1014,6 +1014,19 @@ document.addEventListener("keydown", (e) => {
   feed.scrollBy({ top: (e.key === "ArrowDown" ? 1 : -1) * feed.clientHeight, behavior: "smooth" });
 });
 
+// ---------- クラウド同期用の入り口 ----------
+window.gameApi = {
+  getSave() { return Object.assign({}, state); },
+  applySave(s) {
+    ["level", "xp", "totalDefeated", "bestCombo"].forEach((k) => { if (s[k] !== undefined) state[k] = s[k]; });
+    if (s.date === todayStr()) state.bossesToday = Math.max(state.bossesToday, s.bossesToday || 0);
+    boss.monster = MONSTERS[state.totalDefeated % MONSTERS.length];
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    updateHud();
+    if (state.bossesToday >= BOSSES_PER_DAY) rebuildFeed();
+  }
+};
+
 // ---------- 起動 ----------
 function init() {
   boss.monster = MONSTERS[state.totalDefeated % MONSTERS.length];
