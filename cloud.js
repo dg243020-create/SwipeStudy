@@ -19,6 +19,9 @@ const firebaseConfig = {
 
 const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
+const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
+const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
+const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0 };
 
 // ---------- 画面（右下の小さなボタン） ----------
 const btn = document.createElement("button");
@@ -95,22 +98,32 @@ if (!configured) {
     try {
       const snap = await getDoc(ref());
       const local = window.gameApi.getSave();
+      const lastUid = localStorage.getItem(LAST_UID_KEY);       // null ＝ ログインしたことのない端末
+      const sameOwner = !lastUid || lastUid === user.uid;       // この端末のデータは、このアカウントのもの（またはゲスト）
+
       if (snap.exists()) {
         const cloud = snap.data();
-        if (score(cloud) > score(local)) {
-          // クラウドのほうが進んでいる → クラウドのデータで続きから
-          cloud.bestCombo = Math.max(cloud.bestCombo || 0, local.bestCombo || 0);
+        if (!sameOwner || score(cloud) > score(local)) {
+          // 別のアカウントのデータが残っている場合、または、クラウドのほうが進んでいる場合 → クラウドのデータで再開
+          cloud.bestCombo = sameOwner ? Math.max(cloud.bestCombo || 0, local.bestCombo || 0) : (cloud.bestCombo || 0);
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
         } else {
-          // この端末のほうが進んでいる（または同じ）→ クラウドへ上書き
+          // この端末のほうが進んでいる（または同じ）→ そのまま、クラウドへ上書き
           window.gameApi.applySave({
             level: local.level, xp: local.xp, totalDefeated: local.totalDefeated,
             bestCombo: Math.max(cloud.bestCombo || 0, local.bestCombo || 0),
             date: local.date, bossesToday: local.bossesToday
           });
         }
+      } else if (!sameOwner) {
+        // 初めてのアカウントなのに、端末には別のアカウントのデータが残っている → レベル1から
+        window.gameApi.applySave(FRESH);
+        toastMsg("☁ 新しいアカウントで、最初から始めます");
       }
+      // （初めてのアカウントで、端末のデータがゲストのものなら、そのまま引き継ぐ）
+
+      localStorage.setItem(LAST_UID_KEY, user.uid);
       ready = true;
       await push();
     } catch (e) {
@@ -126,8 +139,19 @@ if (!configured) {
 
   btn.addEventListener("click", async () => {
     if (user) {
-      if (confirm("ログアウトしますか？\n（この端末のデータはそのまま残ります）")) {
+      const choice = prompt("番号を入力してください\n1：ログアウト\n2：このアカウントのデータをリセット（レベル1に戻す）");
+      if (choice === "1") {
+        clearTimeout(timer);
+        await push();                                   // 直前の状態を保存してから
         await signOut(auth);
+        try { localStorage.removeItem(LOCAL_KEY); localStorage.removeItem(LAST_UID_KEY); } catch (e) {}
+        location.reload();                              // 端末側はまっさらに戻す
+      } else if (choice === "2") {
+        if (confirm("このアカウントのレベルや記録を、すべて消してレベル1に戻します。よろしいですか？")) {
+          window.gameApi.applySave(FRESH);
+          await push();
+          toastMsg("☁ リセットしました");
+        }
       }
       return;
     }
