@@ -776,12 +776,16 @@ const QUESTIONS = [
 ];
 
 // ========== ゲーム本体 ==========
+// game.js の「// ========== ゲーム本体 ==========」の行から、いちばん最後までを、このファイルの中身に置き換えてください。
+// （問題データ QUESTIONS の部分は、そのままで大丈夫です）
 const STORAGE_KEY = "swipeVocabRPG.v1";
 const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
 const BOSS_MAX_HP = 100;
-const DAMAGE = 10;              // 正解1回のダメージ
-const HEAL_ON_WRONG = 5;        // 不正解でボスが回復する量
-const BASE_XP = 10;
+const BASE_XP = 10;             // 正解1回の経験値
+const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
+const TEST_SIZE = 10;           // ボス戦（テスト）の問題数
+const TEST_MIN = 5;             // ボス戦に挑戦するのに必要な、記録済みの問題数
+const OFFER_EVERY = 10;         // 新しく何問答えるごとに、ボス戦に誘うか
 
 const MONSTERS = [
   { emoji: "👾", name: "スライム語" },
@@ -800,10 +804,11 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて" };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [] };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
+    if (!Array.isArray(s.studied)) s.studied = [];
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
     return s;
   } catch (e) {
@@ -812,13 +817,16 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
-  if (typeof window.onGameSaved === "function") { try { window.onGameSaved(); } catch (e) {} }
+  if (typeof window.onGameSaved === "function") { try { window.onGameSaved(); } catch (e) { /* 無視 */ } }
 }
 
 let state = load();
 let boss = { hp: BOSS_MAX_HP, monster: MONSTERS[0] };
 let combo = 0;
 let queue = [];
+let mode = "study";      // "study"（スワイプ勉強）か "test"（ボス戦）
+let test = null;         // ボス戦の進行状況 { list, index, correct }
+let sinceOffer = 0;      // 前回の誘いから、新しく記録した問題の数
 
 // ---------- ユーティリティ ----------
 function shuffle(arr) {
@@ -828,6 +836,24 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// ---------- 問題の記録 ----------
+// 問題文などから、問題ごとの目印（ID）をつくる。問題を足しても、記録がずれない。
+function qid(q) {
+  const s = (q.label || "") + q.q;
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+const BY_ID = new Map(QUESTIONS.map((q) => [qid(q), q]));
+let studiedSet = new Set(state.studied);
+function recordStudied(q) {
+  const id = qid(q);
+  if (studiedSet.has(id)) return false;
+  studiedSet.add(id);
+  state.studied.push(id);
+  return true;
 }
 
 // ---------- ジャンル ----------
@@ -841,6 +867,12 @@ const GENRES = [ALL].concat(Array.from(new Set(QUESTIONS.map(genreOf))));
 if (!GENRES.includes(state.genre)) state.genre = ALL;
 function pool() {
   return state.genre === ALL ? QUESTIONS : QUESTIONS.filter((q) => genreOf(q) === state.genre);
+}
+// ボス戦で出題できる、記録済みの問題（いま選んでいるジャンルのもの）
+function studiedPool() {
+  return state.studied
+    .map((id) => BY_ID.get(id))
+    .filter((q) => q && (state.genre === ALL || genreOf(q) === state.genre));
 }
 function nextQuestion() {
   if (queue.length === 0) queue = shuffle(pool());
@@ -911,6 +943,7 @@ function updateHud() {
   $("combo").textContent = "COMBO " + combo;
   $("today").textContent = `今日 ${state.bossesToday}/${BOSSES_PER_DAY}体`;
   $("genreBtn").textContent = "📚 " + state.genre;
+  try { updateModeButton(); } catch (e) { /* 起動中は無視 */ }
 }
 function gainXp(amount) {
   state.xp += amount;
@@ -943,11 +976,7 @@ const observer = new IntersectionObserver((entries) => {
 }, { root: feed, threshold: [0.6] });
 
 function ensureNext(card) {
-  if (bossActive && !card.nextElementSibling) addQuestionCard();
-}
-function goNext(card) {
-  const next = card.nextElementSibling;
-  if (next) next.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (bossActive && mode === "study" && !card.nextElementSibling) addQuestionCard();
 }
 
 // ---------- カード生成 ----------
@@ -958,12 +987,11 @@ function el(tag, cls, text) {
   return e;
 }
 
-function addQuestionCard() {
-  const q = nextQuestion();
+// 問題カード（勉強とボス戦で共通）。選択肢の順番は、毎回ランダム。
+function buildCard(q, label, kind, onPick) {
   const card = el("section", "card");
-  card.dataset.kind = "q";
-
-  card.appendChild(el("div", "q-label", q.label || "この単語の意味は？"));
+  card.dataset.kind = kind;
+  card.appendChild(el("div", "q-label", label));
   const qt = el("div", "q-text", q.q);
   if (q.q.length > 12) qt.classList.add("small"); // 長い問題文は小さめに
   if (q.q.length > 36) qt.classList.add("xsmall");
@@ -972,93 +1000,96 @@ function addQuestionCard() {
   const choices = el("div", "choices");
   const order = shuffle(q.choices.map((text, i) => ({ text, i })));
   const result = el("div", "result");
-
   order.forEach((c) => {
     const b = el("button", "choice", c.text);
     b.type = "button";
-    b.addEventListener("click", () => onAnswer(card, q, order, choices, result, b, c.i));
+    b.addEventListener("click", () => onPick({ card, q, order, choices, result, btn: b, picked: c.i }));
     choices.appendChild(b);
   });
   card.appendChild(choices);
   card.appendChild(result);
+  return card;
+}
 
+// 正解・不正解を表示して、正解したかどうかを返す
+function revealAnswer(ctx) {
+  const { q, order, choices, result, btn, picked } = ctx;
+  const ok = picked === q.answer;
+  Array.from(choices.children).forEach((b, idx) => {
+    b.disabled = true;
+    if (order[idx].i === q.answer) b.classList.add("correct");
+  });
+  if (!ok) btn.classList.add("wrong");
+  result.textContent = "";
+  result.appendChild(el("div", "verdict " + (ok ? "ok" : "ng"), ok ? "⭕ 正解！" : "❌ 残念…"));
+  result.appendChild(el("div", "explain", q.explain));
+  return ok;
+}
+
+// ---------- 勉強モード ----------
+function addQuestionCard() {
+  const q = nextQuestion();
+  const card = buildCard(q, q.label || "この問題は？", "q", onAnswer);
   feed.appendChild(card);
   observer.observe(card);
   return card;
 }
 
-function onAnswer(card, q, order, choices, result, btn, picked) {
+function onAnswer(ctx) {
+  const { card, q, result } = ctx;
   if (card.dataset.answered === "1") return;
   card.dataset.answered = "1";
 
-  const ok = picked === q.answer;
-  const buttons = Array.from(choices.children);
-  buttons.forEach((b, idx) => {
-    b.disabled = true;
-    if (order[idx].i === q.answer) b.classList.add("correct");
-  });
-  if (!ok) btn.classList.add("wrong");
-
-  result.textContent = "";
-  const verdict = el("div", "verdict " + (ok ? "ok" : "ng"), ok ? "⭕ 正解！" : "❌ 残念…");
-  result.appendChild(verdict);
-  result.appendChild(el("div", "explain", q.explain));
+  const ok = revealAnswer(ctx);
+  if (recordStudied(q)) sinceOffer++;     // 答えた問題を、記録する
 
   if (ok) {
     combo++;
     state.bestCombo = Math.max(state.bestCombo, combo);
-    boss.hp = Math.max(0, boss.hp - DAMAGE);
     gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
     beep([660, 880]);
-    retrigger($("enemyEmoji"), "hit");
     retrigger($("combo"), "pop");
     confetti(combo >= 3 ? 40 : 12);
     if (combo >= 3) flash();
   } else {
     combo = 0;
-    boss.hp = Math.min(BOSS_MAX_HP, boss.hp + HEAL_ON_WRONG);
     beep([220, 180], 0.15);
   }
   updateHud();
   save();
 
-  if (boss.hp === 0) {
-    bossDefeated(card, result);
+  // 新しく10問ほど記録したら、ボス戦に誘う
+  if (sinceOffer >= OFFER_EVERY && state.bossesToday < BOSSES_PER_DAY && studiedPool().length >= TEST_MIN) {
+    sinceOffer = 0;
+    result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
+    addOfferCard();
   } else {
     result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
     ensureNext(card);
   }
 }
 
-function bossDefeated(card, result) {
-  state.totalDefeated++;
-  state.bossesToday++;
-  save();
-  updateHud();
-  confetti(100);
-  flash();
-  beep([523, 659, 784, 1047, 1319], 0.12);
-
-  const finished = state.bossesToday >= BOSSES_PER_DAY;
-  const clear = el("section", "card center");
-  clear.dataset.kind = "info";
-  clear.appendChild(el("div", "big-emoji", "🏆"));
-  clear.appendChild(el("div", "q-text", `${boss.monster.name} を撃破！`));
-  clear.appendChild(el("div", "explain", `最高コンボ ${state.bestCombo} ／ 通算 ${state.totalDefeated} 体`));
-
-  if (finished) {
-    clear.appendChild(el("div", "explain", "今日の探索はここまで。おつかれさま！また明日 🌙"));
-  } else {
-    const b = el("button", "btn", "次のボスへ ▶");
-    b.type = "button";
-    b.addEventListener("click", startBoss);
-    clear.appendChild(b);
-  }
-  bossActive = false;
-  while (card.nextElementSibling) card.nextElementSibling.remove();
-  feed.appendChild(clear);
-  result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
-  clear.scrollIntoView({ behavior: "smooth", block: "start" });
+function addOfferCard() {
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", "⚔️"));
+  c.appendChild(el("div", "q-text", "ボス戦に挑戦しますか？"));
+  c.appendChild(el("div", "explain", `記録した ${studiedPool().length} 問から、最大 ${TEST_SIZE} 問を出題。全問正解で撃破！`));
+  const go = el("button", "btn", "⚔ 挑戦する");
+  go.type = "button";
+  go.addEventListener("click", startTest);
+  const more = el("button", "btn", "もう少し勉強する ▶");
+  more.type = "button";
+  more.style.marginTop = "12px";
+  more.addEventListener("click", () => {
+    more.disabled = true;
+    const nc = addQuestionCard();
+    nc.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  c.appendChild(go);
+  c.appendChild(more);
+  feed.appendChild(c);
+  c.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function showDoneCard() {
@@ -1071,16 +1102,149 @@ function showDoneCard() {
   feed.appendChild(done);
 }
 
-function startBoss() {
-  boss = {
-    hp: BOSS_MAX_HP,
-    monster: MONSTERS[state.totalDefeated % MONSTERS.length]
-  };
+// ---------- ボス戦（テストモード） ----------
+function startTest() {
+  if (state.bossesToday >= BOSSES_PER_DAY) { toast("今日のボス戦は、ここまでです"); return; }
+  const list = studiedPool();
+  if (list.length < TEST_MIN) {
+    toast(`ボス戦には、記録した問題が ${TEST_MIN} 問以上必要です（いま ${list.length} 問）`);
+    return;
+  }
+  test = { list: shuffle(list).slice(0, TEST_SIZE), index: 0, correct: 0 };   // 出題順もランダム
+  mode = "test";
+  bossActive = false;
+  boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
   combo = 0;
-  bossActive = true;
+  observer.disconnect();
+  feed.textContent = "";
+  feed.scrollTop = 0;
   updateHud();
-  const card = addQuestionCard();
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  addTestCard();
+}
+
+function addTestCard() {
+  const q = test.list[test.index];
+  const label = `⚔ ボス戦 ${test.index + 1}/${test.list.length}　${q.label || ""}`;
+  const card = buildCard(q, label, "t", onTestAnswer);
+  feed.appendChild(card);
+  return card;
+}
+
+function onTestAnswer(ctx) {
+  const { card, result } = ctx;
+  if (card.dataset.answered === "1") return;
+  card.dataset.answered = "1";
+
+  const ok = revealAnswer(ctx);
+  if (!ok) {
+    combo = 0;
+    beep([220, 180], 0.15);
+    updateHud();
+    save();
+    testFailed(result);
+    return;
+  }
+
+  test.correct++;
+  combo++;
+  state.bestCombo = Math.max(state.bestCombo, combo);
+  gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
+  boss.hp = BOSS_MAX_HP * (1 - test.correct / test.list.length);
+  beep([660, 880]);
+  retrigger($("enemyEmoji"), "hit");
+  retrigger($("combo"), "pop");
+  confetti(combo >= 3 ? 40 : 12);
+  if (combo >= 3) flash();
+  updateHud();
+  save();
+
+  if (test.correct === test.list.length) {
+    testCleared(result);
+  } else {
+    const next = el("button", "btn", "次の問題 ▶");
+    next.type = "button";
+    next.style.marginTop = "12px";
+    next.addEventListener("click", () => {
+      next.disabled = true;
+      test.index++;
+      const nc = addTestCard();
+      nc.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    result.appendChild(next);
+  }
+}
+
+function testFailed(result) {
+  boss.hp = BOSS_MAX_HP;
+  updateHud();
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", "💥"));
+  c.appendChild(el("div", "q-text", "ボスに返り討ちにされた…"));
+  c.appendChild(el("div", "explain", `${test.correct}／${test.list.length} 問正解。全問正解で撃破です。`));
+  const retry = el("button", "btn", "もう一度挑戦 ▶");
+  retry.type = "button";
+  retry.addEventListener("click", startTest);          // 問題も、順番も、新しくなる
+  const back = el("button", "btn", "📖 勉強にもどる");
+  back.type = "button";
+  back.style.marginTop = "12px";
+  back.addEventListener("click", endTest);
+  c.appendChild(retry);
+  c.appendChild(back);
+  result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
+  feed.appendChild(c);
+  c.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function testCleared(result) {
+  const name = boss.monster.name;
+  const total = test.list.length;
+  state.totalDefeated++;
+  state.bossesToday++;
+  gainXp(BOSS_BONUS_XP);
+  save();
+  updateHud();
+  confetti(100);
+  flash();
+  beep([523, 659, 784, 1047, 1319], 0.12);
+
+  const finished = state.bossesToday >= BOSSES_PER_DAY;
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", "🏆"));
+  c.appendChild(el("div", "q-text", `${name} を撃破！`));
+  c.appendChild(el("div", "explain", `${total}問 全問正解！ ／ 最高コンボ ${state.bestCombo} ／ 通算 ${state.totalDefeated} 体`));
+  if (finished) {
+    c.appendChild(el("div", "explain", "今日の探索はここまで。おつかれさま！また明日 🌙"));
+  } else {
+    const b = el("button", "btn", "📖 勉強にもどる");
+    b.type = "button";
+    b.addEventListener("click", endTest);
+    c.appendChild(b);
+  }
+  result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
+  feed.appendChild(c);
+  c.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function endTest() {
+  mode = "study";
+  test = null;
+  rebuildFeed();
+}
+
+// ---------- 画面の切り替えボタン（右下） ----------
+const modeBtn = document.createElement("button");
+modeBtn.type = "button";
+modeBtn.style.cssText = [
+  "position:fixed", "right:10px", "bottom:calc(10px + env(safe-area-inset-bottom, 0px))",
+  "z-index:50", "padding:8px 12px", "border-radius:999px", "border:1px solid rgba(255,255,255,.35)",
+  "background:rgba(20,20,30,.85)", "color:#fff", "font-size:13px", "cursor:pointer"
+].join(";");
+modeBtn.addEventListener("click", () => { if (mode === "test") endTest(); else startTest(); });
+document.body.appendChild(modeBtn);
+function updateModeButton() {
+  modeBtn.textContent = mode === "test" ? "📖 勉強にもどる" : `⚔ ボス戦（記録 ${studiedPool().length} 問）`;
 }
 
 // ---------- ジャンル切り替え ----------
@@ -1098,20 +1262,21 @@ function renderGenreSheet() {
 function openGenreSheet() { renderGenreSheet(); $("genreSheet").hidden = false; }
 function closeGenreSheet() { $("genreSheet").hidden = true; }
 
+// 勉強モードの画面を、最初から作り直す（ボス戦の途中だった場合は、やめて勉強にもどる）
 function rebuildFeed() {
   observer.disconnect();
   feed.textContent = "";
   feed.scrollTop = 0;
+  mode = "study";
+  test = null;
+  boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
+  combo = 0;
+  updateHud();
   if (state.bossesToday >= BOSSES_PER_DAY) {
     showDoneCard();
     return;
   }
-  if (boss.hp <= 0) { // ボス撃破画面で切り替えた場合は、新しいボスから始める
-    boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
-    combo = 0;
-  }
   bossActive = true;
-  updateHud();
   addQuestionCard();
 }
 function selectGenre(g) {
@@ -1134,20 +1299,20 @@ document.addEventListener("keydown", (e) => {
   feed.scrollBy({ top: (e.key === "ArrowDown" ? 1 : -1) * feed.clientHeight, behavior: "smooth" });
 });
 
-// ---------- クラウド同期用の入り口 ----------
+// ---------- クラウド同期用の入り口（cloud.js が使う） ----------
 window.gameApi = {
   getSave() { return Object.assign({}, state); },
+  // 渡されたデータで、進行状況を丸ごと置き換える
   applySave(s) {
     state.level = s.level || 1;
     state.xp = s.xp || 0;
     state.totalDefeated = s.totalDefeated || 0;
     state.bestCombo = s.bestCombo || 0;
+    state.studied = Array.isArray(s.studied) ? s.studied.slice() : [];
+    studiedSet = new Set(state.studied);
     state.date = todayStr();
     state.bossesToday = (s.date === todayStr()) ? (s.bossesToday || 0) : 0;
-    boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
-    combo = 0;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
-    updateHud();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
     rebuildFeed();
   }
 };
