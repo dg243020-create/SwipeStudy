@@ -786,6 +786,7 @@ const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
 const TEST_SIZE = 10;           // ボス戦（テスト）の問題数
 const TEST_MIN = 5;             // ボス戦に挑戦するのに必要な、記録済みの問題数
 const OFFER_EVERY = 10;         // 新しく何問答えるごとに、ボス戦に誘うか
+const FLASH_EFFECT = false;     // 3コンボ以上などで、画面が白く光る演出（true にすると復活）
 
 const MONSTERS = [
   { emoji: "👾", name: "スライム語" },
@@ -914,6 +915,7 @@ function confetti(n = 36) {
   }
 }
 function flash() {
+  if (!FLASH_EFFECT) return;
   const f = document.createElement("div");
   f.className = "flash";
   $("fx").appendChild(f);
@@ -1089,7 +1091,6 @@ function addOfferCard() {
   c.appendChild(go);
   c.appendChild(more);
   feed.appendChild(c);
-  c.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function showDoneCard() {
@@ -1161,16 +1162,10 @@ function onTestAnswer(ctx) {
   if (test.correct === test.list.length) {
     testCleared(result);
   } else {
-    const next = el("button", "btn", "次の問題 ▶");
-    next.type = "button";
-    next.style.marginTop = "12px";
-    next.addEventListener("click", () => {
-      next.disabled = true;
-      test.index++;
-      const nc = addTestCard();
-      nc.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    result.appendChild(next);
+    // 答えたら、次の問題のカードが現れる。上にスワイプして進む（答えるまでは、次のカードがないので進めない）
+    result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
+    test.index++;
+    addTestCard();
   }
 }
 
@@ -1193,7 +1188,6 @@ function testFailed(result) {
   c.appendChild(back);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
-  c.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function testCleared(result) {
@@ -1224,7 +1218,6 @@ function testCleared(result) {
   }
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
-  c.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function endTest() {
