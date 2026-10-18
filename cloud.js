@@ -17,11 +17,12 @@ const firebaseConfig = {
 };
 // =======================================================
 
-const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday"];
+const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
-const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0 };
+const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [] };
+const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
 
 // ---------- 画面（右下の小さなボタン） ----------
 const btn = document.createElement("button");
@@ -106,6 +107,7 @@ if (!configured) {
         if (!sameOwner || score(cloud) > score(local)) {
           // 別のアカウントのデータが残っている場合、または、クラウドのほうが進んでいる場合 → クラウドのデータで再開
           cloud.bestCombo = sameOwner ? Math.max(cloud.bestCombo || 0, local.bestCombo || 0) : (cloud.bestCombo || 0);
+          if (sameOwner) cloud.studied = union(cloud.studied, local.studied);
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
         } else {
@@ -113,7 +115,8 @@ if (!configured) {
           window.gameApi.applySave({
             level: local.level, xp: local.xp, totalDefeated: local.totalDefeated,
             bestCombo: Math.max(cloud.bestCombo || 0, local.bestCombo || 0),
-            date: local.date, bossesToday: local.bossesToday
+            date: local.date, bossesToday: local.bossesToday,
+            studied: union(local.studied, cloud.studied)
           });
         }
       } else if (!sameOwner) {
