@@ -785,7 +785,11 @@ const BASE_XP = 10;             // 正解1回の経験値
 const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
 const TEST_SIZE = 10;           // ボス戦（テスト）の問題数
 const TEST_MIN = 5;             // ボス戦に挑戦するのに必要な、記録済みの問題数
-const OFFER_EVERY = 10;         // 新しく何問答えるごとに、ボス戦に誘うか
+const OFFER_MIN = 20;           // ボス戦に誘うまでに、最低でも何問答えるか
+const OFFER_MAX = 30;           // 誘いが来るまでの問題数は、OFFER_MIN〜OFFER_MAX のあいだでランダム
+const YESTERDAY_BONUS_XP = 30;  // 昨日の分のテストを全問正解したときの、追加経験値（1日1回）
+const YESTERDAY_MIN = 3;        // 「昨日の分のテスト」に必要な、昨日勉強した問題の数
+const HISTORY_DAYS = 14;        // 何日分の「その日に勉強した問題」を残すか
 const FLASH_EFFECT = false;     // 3コンボ以上などで、画面が白く光る演出（true にすると復活）
 
 const MONSTERS = [
@@ -805,11 +809,12 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [] };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "" };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
     if (!Array.isArray(s.studied)) s.studied = [];
+    if (!s.history || typeof s.history !== "object" || Array.isArray(s.history)) s.history = {};
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
     return s;
   } catch (e) {
@@ -822,14 +827,17 @@ function save() {
 }
 
 let state = load();
+if (!state.nextOfferAt) state.nextOfferAt = rollOffer();   // 次のボス戦の誘いまで、何問か（ランダム）
 let boss = { hp: BOSS_MAX_HP, monster: MONSTERS[0] };
 let combo = 0;
 let queue = [];
 let mode = "study";      // "study"（スワイプ勉強）か "test"（ボス戦）
 let test = null;         // ボス戦の進行状況 { list, index, correct }
-let sinceOffer = 0;      // 前回の誘いから、新しく記録した問題の数
 
 // ---------- ユーティリティ ----------
+function rollOffer() {
+  return OFFER_MIN + Math.floor(Math.random() * (OFFER_MAX - OFFER_MIN + 1));
+}
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -855,6 +863,24 @@ function recordStudied(q) {
   studiedSet.add(id);
   state.studied.push(id);
   return true;
+}
+
+// その日に勉強した問題の記録（「昨日の分のテスト」で使う）
+function addHistory(q) {
+  const d = todayStr();
+  const arr = state.history[d] || (state.history[d] = []);
+  const id = qid(q);
+  if (!arr.includes(id)) arr.push(id);
+  const keys = Object.keys(state.history).sort();
+  while (keys.length > HISTORY_DAYS) delete state.history[keys.shift()];
+}
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString("sv-SE");
+}
+function yesterdayPool() {
+  return (state.history[yesterdayStr()] || []).map((id) => BY_ID.get(id)).filter(Boolean);
 }
 
 // ---------- ジャンル ----------
@@ -1043,7 +1069,9 @@ function onAnswer(ctx) {
   card.dataset.answered = "1";
 
   const ok = revealAnswer(ctx);
-  if (recordStudied(q)) sinceOffer++;     // 答えた問題を、記録する
+  recordStudied(q);                       // 答えた問題を、記録する
+  state.sinceOffer = (state.sinceOffer || 0) + 1;   // 前回の誘いから、何問答えたか
+  addHistory(q);                          // 「今日勉強した問題」としても記録する
 
   if (ok) {
     combo++;
@@ -1057,12 +1085,13 @@ function onAnswer(ctx) {
     combo = 0;
     beep([220, 180], 0.15);
   }
+  // 20〜30問のあいだのランダムな問題数に達したら、ボス戦に誘う（抜き打ち）
+  const offerDue = state.sinceOffer >= state.nextOfferAt && state.bossesToday < BOSSES_PER_DAY && studiedPool().length >= TEST_MIN;
+  if (offerDue) { state.sinceOffer = 0; state.nextOfferAt = rollOffer(); }
   updateHud();
   save();
 
-  // 新しく10問ほど記録したら、ボス戦に誘う
-  if (sinceOffer >= OFFER_EVERY && state.bossesToday < BOSSES_PER_DAY && studiedPool().length >= TEST_MIN) {
-    sinceOffer = 0;
+  if (offerDue) {
     result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
     addOfferCard();
   } else {
@@ -1075,12 +1104,12 @@ function addOfferCard() {
   const c = el("section", "card center");
   c.dataset.kind = "info";
   c.appendChild(el("div", "big-emoji", "⚔️"));
-  c.appendChild(el("div", "q-text", "ボス戦に挑戦しますか？"));
+  c.appendChild(el("div", "q-text", "ボスが現れた！ 挑戦しますか？"));
   c.appendChild(el("div", "explain", `記録した ${studiedPool().length} 問から、最大 ${TEST_SIZE} 問を出題。全問正解で撃破！`));
   const go = el("button", "btn", "⚔ 挑戦する");
   go.type = "button";
   go.addEventListener("click", startTest);
-  const more = el("button", "btn", "もう少し勉強する ▶");
+  const more = el("button", "btn", "あとにする（勉強をつづける） ▶");
   more.type = "button";
   more.style.marginTop = "12px";
   more.addEventListener("click", () => {
@@ -1104,14 +1133,9 @@ function showDoneCard() {
 }
 
 // ---------- ボス戦（テストモード） ----------
-function startTest() {
-  if (state.bossesToday >= BOSSES_PER_DAY) { toast("今日のボス戦は、ここまでです"); return; }
-  const list = studiedPool();
-  if (list.length < TEST_MIN) {
-    toast(`ボス戦には、記録した問題が ${TEST_MIN} 問以上必要です（いま ${list.length} 問）`);
-    return;
-  }
-  test = { list: shuffle(list).slice(0, TEST_SIZE), index: 0, correct: 0 };   // 出題順もランダム
+// ボス戦（テスト）を始める共通の処理
+function beginTest(list, kind, title, icon, retry) {
+  test = { list: shuffle(list).slice(0, TEST_SIZE), index: 0, correct: 0, kind, title, icon, retry };   // 出題順もランダム
   mode = "test";
   bossActive = false;
   boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
@@ -1123,9 +1147,31 @@ function startTest() {
   addTestCard();
 }
 
+// 記録した問題から出題するボス戦
+function startTest() {
+  if (state.bossesToday >= BOSSES_PER_DAY) { toast("今日のボス戦は、ここまでです"); return; }
+  const list = studiedPool();
+  if (list.length < TEST_MIN) {
+    toast(`ボス戦には、記録した問題が ${TEST_MIN} 問以上必要です（いま ${list.length} 問）`);
+    return;
+  }
+  beginTest(list, "boss", "ボス戦", "⚔", startTest);
+}
+
+// 昨日勉強した問題から出題するテスト（ボス討伐には数えない。全問正解で、追加経験値）
+function startYesterdayTest() {
+  if (state.yesterdayDone === todayStr()) { toast("昨日の分のテストは、今日はクリア済みです"); return; }
+  const list = yesterdayPool();
+  if (list.length < YESTERDAY_MIN) {
+    toast(`昨日の分のテストには、昨日勉強した問題が ${YESTERDAY_MIN} 問以上必要です（昨日は ${list.length} 問）`);
+    return;
+  }
+  beginTest(list, "yesterday", "昨日のテスト", "📝", startYesterdayTest);
+}
+
 function addTestCard() {
   const q = test.list[test.index];
-  const label = `⚔ ボス戦 ${test.index + 1}/${test.list.length}　${q.label || ""}`;
+  const label = `${test.icon} ${test.title} ${test.index + 1}/${test.list.length}　${q.label || ""}`;
   const card = buildCard(q, label, "t", onTestAnswer);
   feed.appendChild(card);
   return card;
@@ -1150,9 +1196,11 @@ function onTestAnswer(ctx) {
   combo++;
   state.bestCombo = Math.max(state.bestCombo, combo);
   gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
-  boss.hp = BOSS_MAX_HP * (1 - test.correct / test.list.length);
+  if (test.kind === "boss") {
+    boss.hp = BOSS_MAX_HP * (1 - test.correct / test.list.length);
+    retrigger($("enemyEmoji"), "hit");
+  }
   beep([660, 880]);
-  retrigger($("enemyEmoji"), "hit");
   retrigger($("combo"), "pop");
   confetti(combo >= 3 ? 40 : 12);
   if (combo >= 3) flash();
@@ -1160,7 +1208,7 @@ function onTestAnswer(ctx) {
   save();
 
   if (test.correct === test.list.length) {
-    testCleared(result);
+    if (test.kind === "yesterday") yesterdayCleared(result); else testCleared(result);
   } else {
     // 答えたら、次の問題のカードが現れる。上にスワイプして進む（答えるまでは、次のカードがないので進めない）
     result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
@@ -1170,22 +1218,44 @@ function onTestAnswer(ctx) {
 }
 
 function testFailed(result) {
-  boss.hp = BOSS_MAX_HP;
+  const isBoss = test.kind === "boss";
+  if (isBoss) boss.hp = BOSS_MAX_HP;
   updateHud();
   const c = el("section", "card center");
   c.dataset.kind = "info";
   c.appendChild(el("div", "big-emoji", "💥"));
-  c.appendChild(el("div", "q-text", "ボスに返り討ちにされた…"));
-  c.appendChild(el("div", "explain", `${test.correct}／${test.list.length} 問正解。全問正解で撃破です。`));
+  c.appendChild(el("div", "q-text", isBoss ? "ボスに返り討ちにされた…" : "テストは不合格…"));
+  c.appendChild(el("div", "explain", `${test.correct}／${test.list.length} 問正解。` + (isBoss ? "全問正解で撃破です。" : `全問正解で、追加経験値 +${YESTERDAY_BONUS_XP}！`)));
   const retry = el("button", "btn", "もう一度挑戦 ▶");
   retry.type = "button";
-  retry.addEventListener("click", startTest);          // 問題も、順番も、新しくなる
+  retry.addEventListener("click", test.retry);         // 問題も、順番も、新しくなる
   const back = el("button", "btn", "📖 勉強にもどる");
   back.type = "button";
   back.style.marginTop = "12px";
   back.addEventListener("click", endTest);
   c.appendChild(retry);
   c.appendChild(back);
+  result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
+  feed.appendChild(c);
+}
+
+function yesterdayCleared(result) {
+  const total = test.list.length;
+  state.yesterdayDone = todayStr();      // 追加経験値は、1日1回
+  gainXp(YESTERDAY_BONUS_XP);
+  save();
+  updateHud();
+  confetti(60);
+  beep([523, 659, 784, 1047], 0.12);
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", "📝"));
+  c.appendChild(el("div", "q-text", "昨日の分のテスト クリア！"));
+  c.appendChild(el("div", "explain", `${total}問 全問正解！ 追加経験値 +${YESTERDAY_BONUS_XP}`));
+  const b = el("button", "btn", "📖 勉強にもどる");
+  b.type = "button";
+  b.addEventListener("click", endTest);
+  c.appendChild(b);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
 }
@@ -1227,18 +1297,123 @@ function endTest() {
 }
 
 // ---------- 画面の切り替えボタン（右下） ----------
+const FLOAT_STYLE = [
+  "position:fixed", "right:10px", "z-index:50", "padding:8px 12px", "border-radius:999px",
+  "border:1px solid rgba(255,255,255,.35)", "background:rgba(20,20,30,.85)", "color:#fff",
+  "font-size:13px", "cursor:pointer"
+].join(";");
 const modeBtn = document.createElement("button");
 modeBtn.type = "button";
-modeBtn.style.cssText = [
-  "position:fixed", "right:10px", "bottom:calc(10px + env(safe-area-inset-bottom, 0px))",
-  "z-index:50", "padding:8px 12px", "border-radius:999px", "border:1px solid rgba(255,255,255,.35)",
-  "background:rgba(20,20,30,.85)", "color:#fff", "font-size:13px", "cursor:pointer"
-].join(";");
+modeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(10px + env(safe-area-inset-bottom, 0px))";
 modeBtn.addEventListener("click", () => { if (mode === "test") endTest(); else startTest(); });
 document.body.appendChild(modeBtn);
+const homeBtn = document.createElement("button");
+homeBtn.type = "button";
+homeBtn.textContent = "🏠 メニュー";
+homeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(56px + env(safe-area-inset-bottom, 0px))";
+homeBtn.addEventListener("click", () => openMenu());
+document.body.appendChild(homeBtn);
+
+let menuOpen = false;
 function updateModeButton() {
+  const hide = menuOpen ? "none" : "";
+  modeBtn.style.display = hide;     // メニューを開いているあいだは、隠す
+  homeBtn.style.display = hide;
   modeBtn.textContent = mode === "test" ? "📖 勉強にもどる" : `⚔ ボス戦（記録 ${studiedPool().length} 問）`;
 }
+
+// ---------- スタートメニュー ----------
+const menu = document.createElement("div");
+menu.style.cssText = [
+  "position:fixed", "inset:0", "z-index:40", "display:none", "flex-direction:column",
+  "align-items:center", "justify-content:center", "padding:24px", "overflow:auto", "color:#fff",
+  "background:radial-gradient(circle at 50% 25%, #2a1b5c, #120a2a 70%)"
+].join(";");
+document.body.appendChild(menu);
+
+function menuBtn(label, sub, onClick, disabled) {
+  const b = el("button", "btn");
+  b.type = "button";
+  b.style.cssText = "display:block;width:100%;text-align:left;padding:14px 16px;";
+  b.appendChild(el("div", "", label));
+  if (sub) {
+    const d = el("div", "", sub);
+    d.style.cssText = "font-size:12px;font-weight:400;opacity:.75;margin-top:3px;";
+    b.appendChild(d);
+  }
+  if (disabled) { b.disabled = true; b.style.opacity = "0.45"; }
+  else b.addEventListener("click", onClick);
+  return b;
+}
+function recordedCount(g) {
+  return state.studied.filter((id) => {
+    const q = BY_ID.get(id);
+    return q && (g === ALL || genreOf(q) === g);
+  }).length;
+}
+
+function renderMenu(view) {
+  menu.textContent = "";
+  const box = el("div");
+  box.style.cssText = "width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;";
+  const title = el("div", "q-text", view === "genres" ? "教科をえらぶ" : "📚 SwipeStudy");
+  title.style.textAlign = "center";
+  box.appendChild(title);
+
+  if (view === "genres") {
+    GENRES.forEach((g) => {
+      const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
+      const cur = g === state.genre ? "　✔ いま選択中" : "";
+      box.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
+    });
+    box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+  } else {
+    const info = el("div", "explain", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
+    info.style.textAlign = "center";
+    box.appendChild(info);
+
+    const limit = state.bossesToday >= BOSSES_PER_DAY;
+    const n = studiedPool().length;
+    const y = yesterdayPool().length;
+    box.appendChild(menuBtn(`▶ つづきから勉強する`, `いまの教科：${state.genre}`, () => {
+      closeMenu();
+      if (mode !== "study") rebuildFeed();
+    }));
+    box.appendChild(menuBtn("📚 教科をえらんで勉強する", "日本史・世界史・地理・政治・経済・倫理・生物", () => renderMenu("genres")));
+    box.appendChild(menuBtn("⚔ ボス戦（記録した問題から）",
+      limit ? "今日のボス戦は終了しました" : (n < TEST_MIN ? `記録 ${n}問（${TEST_MIN}問以上で挑戦できます）` : `記録 ${n}問から、最大${TEST_SIZE}問を出題`),
+      () => { closeMenu(); startTest(); }, limit || n < TEST_MIN));
+    const yDone = state.yesterdayDone === todayStr();
+    box.appendChild(menuBtn("📝 昨日の分のテスト",
+      yDone ? "今日はクリア済み（追加経験値をゲット ✔）"
+        : (y < YESTERDAY_MIN ? `昨日の記録 ${y}問（${YESTERDAY_MIN}問以上で挑戦できます）`
+          : `昨日勉強した ${y}問から、最大${TEST_SIZE}問。全問正解で追加経験値 +${YESTERDAY_BONUS_XP}`),
+      () => { closeMenu(); startYesterdayTest(); }, yDone || y < YESTERDAY_MIN));
+    box.appendChild(menuBtn("🏆 ランキング", "レベル・ボス討伐数", () => {
+      if (typeof window.openRanking === "function") window.openRanking();
+      else alert("ランキングを使うには、ログイン機能（cloud.js）が必要です。");
+    }));
+  }
+  menu.appendChild(box);
+}
+function openMenu(view) {
+  menuOpen = true;
+  renderMenu(view || "main");
+  menu.style.display = "flex";
+  updateModeButton();
+}
+function closeMenu() {
+  menuOpen = false;
+  menu.style.display = "none";
+  updateModeButton();
+}
+function pickGenre(g) {
+  closeMenu();
+  if (g !== state.genre) { state.genre = g; save(); queue = []; }
+  rebuildFeed();
+  toast("📚 " + g);
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menuOpen) closeMenu(); });
 
 // ---------- ジャンル切り替え ----------
 function renderGenreSheet() {
@@ -1303,6 +1478,8 @@ window.gameApi = {
     state.bestCombo = s.bestCombo || 0;
     state.studied = Array.isArray(s.studied) ? s.studied.slice() : [];
     studiedSet = new Set(state.studied);
+    state.history = (s.history && typeof s.history === "object" && !Array.isArray(s.history)) ? JSON.parse(JSON.stringify(s.history)) : {};
+    state.yesterdayDone = s.yesterdayDone || "";
     state.date = todayStr();
     state.bossesToday = (s.date === todayStr()) ? (s.bossesToday || 0) : 0;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
@@ -1319,6 +1496,7 @@ function init() {
   } else {
     addQuestionCard();
   }
+  openMenu();                       // 起動したら、まずメニューを出す
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
