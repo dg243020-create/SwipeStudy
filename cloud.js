@@ -5,7 +5,8 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, serverTimestamp,
+  collection, query, orderBy, limit, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ========== ここをFirebaseの設定値に書き換える ==========
@@ -67,11 +68,34 @@ if (!configured) {
 
   const ref = () => doc(db, "users", user.uid);
 
+  // ---------- ランキング用のデータ（みんなに見える） ----------
+  let nickname = null;   // ランキングに出す名前（未設定なら Googleの名前の最初の部分）
+  let lastLb = "";       // 前回書き込んだ内容（変化がなければ、書き込まない）
+  async function pushBoard() {
+    try {
+      const g = window.gameApi.getSave();
+      const data = {
+        name: nickname || shortName(),
+        level: g.level || 1,
+        xp: g.xp || 0,
+        levelScore: (g.level || 1) * 1e6 + (g.xp || 0),   // レベル → 経験値の順に並べるための値
+        totalDefeated: g.totalDefeated || 0
+      };
+      const key = JSON.stringify(data);
+      if (key === lastLb) return;
+      await setDoc(doc(db, "leaderboard", user.uid), Object.assign({}, data, { updatedAt: serverTimestamp() }), { merge: true });
+      lastLb = key;
+    } catch (e) {
+      console.warn("ランキングの更新に失敗", e);   // ランキングが失敗しても、セーブの同期は止めない
+    }
+  }
+
   async function push() {
     if (!user || !ready) return;
     try {
       const s = pick(window.gameApi.getSave());
       await setDoc(ref(), Object.assign(s, { updatedAt: serverTimestamp() }), { merge: true });
+      await pushBoard();
       setStatus("☁ " + shortName() + "（同期済み）");
     } catch (e) {
       console.error(e);
@@ -98,6 +122,11 @@ if (!configured) {
     setStatus("☁ 同期中…");
     try {
       const snap = await getDoc(ref());
+      try {
+        const lb = await getDoc(doc(db, "leaderboard", user.uid));
+        nickname = (lb.exists() && lb.data().name) ? lb.data().name : null;
+      } catch (e) { nickname = null; }
+      lastLb = "";
       const local = window.gameApi.getSave();
       const lastUid = localStorage.getItem(LAST_UID_KEY);       // null ＝ ログインしたことのない端末
       const sameOwner = !lastUid || lastUid === user.uid;       // この端末のデータは、このアカウントのもの（またはゲスト）
@@ -142,13 +171,19 @@ if (!configured) {
 
   btn.addEventListener("click", async () => {
     if (user) {
-      const choice = prompt("番号を入力してください\n1：ログアウト\n2：このアカウントのデータをリセット（レベル1に戻す）");
+      const choice = prompt("番号を入力してください\n1：ログアウト\n2：このアカウントのデータをリセット（レベル1に戻す）\n3：ランキングの表示名を変える");
       if (choice === "1") {
         clearTimeout(timer);
         await push();                                   // 直前の状態を保存してから
         await signOut(auth);
         try { localStorage.removeItem(LOCAL_KEY); localStorage.removeItem(LAST_UID_KEY); } catch (e) {}
         location.reload();                              // 端末側はまっさらに戻す
+      } else if (choice === "3") {
+        const v = prompt("ランキングに表示する名前（12文字まで）\n※ほかのログイン中の人にも見えます", nickname || shortName());
+        if (v !== null) {
+          const nm = v.trim().slice(0, 12);
+          if (nm) { nickname = nm; lastLb = ""; clearTimeout(timer); await push(); toastMsg("🏆 表示名を変更しました"); }
+        }
       } else if (choice === "2") {
         if (confirm("このアカウントのレベルや記録を、すべて消してレベル1に戻します。よろしいですか？")) {
           window.gameApi.applySave(FRESH);
@@ -167,4 +202,108 @@ if (!configured) {
       }
     }
   });
+
+  // ---------- ランキング画面 ----------
+  const rankBtn = document.createElement("button");
+  rankBtn.type = "button";
+  rankBtn.textContent = "🏆 ランキング";
+  rankBtn.style.cssText = [
+    "position:fixed", "left:10px", "bottom:calc(56px + env(safe-area-inset-bottom, 0px))",
+    "z-index:50", "padding:8px 12px", "border-radius:999px", "border:1px solid rgba(255,255,255,.35)",
+    "background:rgba(20,20,30,.85)", "color:#fff", "font-size:13px", "cursor:pointer"
+  ].join(";");
+  document.body.appendChild(rankBtn);
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;";
+  const panel = document.createElement("div");
+  panel.style.cssText = "background:#1b1433;color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:16px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;";
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;font-weight:700;font-size:17px;";
+  head.appendChild(document.createTextNode("🏆 ランキング"));
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.textContent = "✕";
+  closeBtn.style.cssText = "background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px 8px;";
+  head.appendChild(closeBtn);
+  const tabs = document.createElement("div");
+  tabs.style.cssText = "display:flex;gap:8px;padding:0 16px 10px;";
+  const list = document.createElement("div");
+  list.style.cssText = "overflow:auto;padding:0 16px 16px;font-size:15px;";
+  panel.appendChild(head); panel.appendChild(tabs); panel.appendChild(list);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  const TABS = [
+    { key: "level", label: "レベル", field: "levelScore", fmt: (d) => "Lv." + d.level },
+    { key: "boss", label: "ボス討伐数", field: "totalDefeated", fmt: (d) => (d.totalDefeated || 0) + "体" }
+  ];
+  const tabBtns = {};
+  TABS.forEach((t) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = t.label;
+    b.addEventListener("click", () => loadRanking(t));
+    tabs.appendChild(b);
+    tabBtns[t.key] = b;
+  });
+  function styleTabs(activeKey) {
+    TABS.forEach((t) => {
+      const on = t.key === activeKey;
+      tabBtns[t.key].style.cssText = "flex:1;padding:8px;border-radius:10px;font-size:14px;cursor:pointer;color:#fff;border:1px solid rgba(255,255,255,.3);" +
+        (on ? "background:#6b4bd6;font-weight:700;" : "background:rgba(255,255,255,.06);");
+    });
+  }
+
+  async function loadRanking(tab) {
+    styleTabs(tab.key);
+    list.textContent = "読み込み中…";
+    try {
+      clearTimeout(timer);
+      await push();                                       // 自分の最新の記録を、先に反映
+      const snap = await getDocs(query(collection(db, "leaderboard"), orderBy(tab.field, "desc"), limit(50)));
+      list.textContent = "";
+      if (snap.empty) { list.textContent = "まだ誰も登録されていません。"; return; }
+      let rank = 0, prev = null, i = 0;
+      snap.forEach((d) => {
+        const data = d.data();
+        i++;
+        const val = data[tab.field];
+        if (val !== prev) { rank = i; prev = val; }       // 同じ値なら、同じ順位
+        const row = document.createElement("div");
+        const mine = user && d.id === user.uid;
+        row.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;margin-top:6px;" +
+          (mine ? "background:rgba(255,207,63,.18);border:1px solid rgba(255,207,63,.5);" : "background:rgba(255,255,255,.05);");
+        const r = document.createElement("div");
+        r.style.cssText = "width:2.2em;text-align:center;font-weight:700;";
+        r.textContent = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : String(rank);
+        const n = document.createElement("div");
+        n.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        n.textContent = (data.name || "名無し") + (mine ? "（あなた）" : "");   // 名前は、textContentで入れる
+        const v = document.createElement("div");
+        v.style.cssText = "font-weight:700;";
+        v.textContent = tab.fmt(data);
+        row.appendChild(r); row.appendChild(n); row.appendChild(v);
+        list.appendChild(row);
+      });
+      const note = document.createElement("div");
+      note.style.cssText = "margin-top:12px;font-size:12px;opacity:.7;";
+      note.textContent = "上位50人まで表示します。";
+      list.appendChild(note);
+    } catch (e) {
+      console.error(e);
+      list.textContent = "読み込めませんでした。（" + (e.code || e.message) + "）";
+    }
+  }
+
+  function openRanking() {
+    if (!user) { alert("ランキングを見るには、ログインが必要です。"); return; }
+    overlay.style.display = "flex";
+    loadRanking(TABS[0]);
+  }
+  function closeRanking() { overlay.style.display = "none"; }
+  rankBtn.addEventListener("click", openRanking);
+  closeBtn.addEventListener("click", closeRanking);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeRanking(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRanking(); });
 }
