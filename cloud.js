@@ -18,12 +18,19 @@ const firebaseConfig = {
 };
 // =======================================================
 
-const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied"];
+const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
-const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [] };
+const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "" };
 const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
+const maxStr = (a, b) => ((a || "") > (b || "") ? (a || "") : (b || ""));   // 新しい日付のほうを残す
+// 「その日に勉強した問題」の記録は、日付ごとに、両方を合わせる
+const unionHist = (a, b) => {
+  const o = {};
+  new Set([...Object.keys(a || {}), ...Object.keys(b || {})]).forEach((k) => { o[k] = union((a || {})[k], (b || {})[k]); });
+  return o;
+};
 
 // ---------- 画面（右下の小さなボタン） ----------
 const btn = document.createElement("button");
@@ -136,7 +143,11 @@ if (!configured) {
         if (!sameOwner || score(cloud) > score(local)) {
           // 別のアカウントのデータが残っている場合、または、クラウドのほうが進んでいる場合 → クラウドのデータで再開
           cloud.bestCombo = sameOwner ? Math.max(cloud.bestCombo || 0, local.bestCombo || 0) : (cloud.bestCombo || 0);
-          if (sameOwner) cloud.studied = union(cloud.studied, local.studied);
+          if (sameOwner) {
+            cloud.studied = union(cloud.studied, local.studied);
+            cloud.history = unionHist(cloud.history, local.history);
+            cloud.yesterdayDone = maxStr(cloud.yesterdayDone, local.yesterdayDone);
+          }
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
         } else {
@@ -145,7 +156,9 @@ if (!configured) {
             level: local.level, xp: local.xp, totalDefeated: local.totalDefeated,
             bestCombo: Math.max(cloud.bestCombo || 0, local.bestCombo || 0),
             date: local.date, bossesToday: local.bossesToday,
-            studied: union(local.studied, cloud.studied)
+            studied: union(local.studied, cloud.studied),
+            history: unionHist(local.history, cloud.history),
+            yesterdayDone: maxStr(local.yesterdayDone, cloud.yesterdayDone)
           });
         }
       } else if (!sameOwner) {
@@ -204,16 +217,6 @@ if (!configured) {
   });
 
   // ---------- ランキング画面 ----------
-  const rankBtn = document.createElement("button");
-  rankBtn.type = "button";
-  rankBtn.textContent = "🏆 ランキング";
-  rankBtn.style.cssText = [
-    "position:fixed", "left:10px", "bottom:calc(56px + env(safe-area-inset-bottom, 0px))",
-    "z-index:50", "padding:8px 12px", "border-radius:999px", "border:1px solid rgba(255,255,255,.35)",
-    "background:rgba(20,20,30,.85)", "color:#fff", "font-size:13px", "cursor:pointer"
-  ].join(";");
-  document.body.appendChild(rankBtn);
-
   const overlay = document.createElement("div");
   overlay.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;";
   const panel = document.createElement("div");
@@ -302,7 +305,7 @@ if (!configured) {
     loadRanking(TABS[0]);
   }
   function closeRanking() { overlay.style.display = "none"; }
-  rankBtn.addEventListener("click", openRanking);
+  window.openRanking = openRanking;           // スタートメニューの「ランキング」から開く
   closeBtn.addEventListener("click", closeRanking);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) closeRanking(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRanking(); });
