@@ -787,6 +787,7 @@ const TEST_SIZE = 10;           // ボス戦（テスト）の問題数
 const TEST_MIN = 5;             // ボス戦に挑戦するのに必要な、記録済みの問題数
 const OFFER_MIN = 20;           // ボス戦に誘うまでに、最低でも何問答えるか
 const OFFER_MAX = 30;           // 誘いが来るまでの問題数は、OFFER_MIN〜OFFER_MAX のあいだでランダム
+const DAILY_GOAL = 10;           // 1日の目標。この問数を解くと、その日のストリークが続く
 const YESTERDAY_BONUS_XP = 30;  // 昨日の分のテストを全問正解したときの、追加経験値（1日1回）
 const YESTERDAY_MIN = 3;        // 「昨日の分のテスト」に必要な、昨日勉強した問題の数
 const HISTORY_DAYS = 14;        // 何日分の「その日に勉強した問題」を残すか
@@ -809,13 +810,14 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "" };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "" };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
     if (!Array.isArray(s.studied)) s.studied = [];
     if (!s.history || typeof s.history !== "object" || Array.isArray(s.history)) s.history = {};
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
+    if (s.answeredDate !== todayStr()) { s.answeredDate = todayStr(); s.answeredToday = 0; }
     return s;
   } catch (e) {
     return base;
@@ -881,6 +883,32 @@ function yesterdayStr() {
 }
 function yesterdayPool() {
   return (state.history[yesterdayStr()] || []).map((id) => BY_ID.get(id)).filter(Boolean);
+}
+
+// ---------- 毎日の目標とストリーク ----------
+// 1日に DAILY_GOAL 問（勉強でもボス戦でも、答えた問題の数）を解くと、その日が「達成」になり、連続日数（ストリーク）が1日増える。
+function ensureToday() {          // 日付をまたいだら、今日の分を0に戻す（0時で切り替わる）
+  const t = todayStr();
+  if (state.date !== t) { state.date = t; state.bossesToday = 0; }
+  if (state.answeredDate !== t) { state.answeredDate = t; state.answeredToday = 0; }
+}
+function currentStreak() {        // 昨日までに達成していれば、続いている。それより前で止まっていたら、途切れている
+  if (state.lastGoalDate === todayStr() || state.lastGoalDate === yesterdayStr()) return state.streak || 0;
+  return 0;
+}
+function achieveGoal() {
+  if (state.lastGoalDate === todayStr()) return;
+  state.streak = (state.lastGoalDate === yesterdayStr()) ? (state.streak || 0) + 1 : 1;
+  state.bestStreak = Math.max(state.bestStreak || 0, state.streak);
+  state.lastGoalDate = todayStr();
+  confetti(80);
+  beep([523, 659, 784, 1047], 0.12);
+  setTimeout(() => toast(`🔥 ${state.streak}日連続！ 今日の目標を達成！`), 900);
+}
+function countAnswer() {          // 問題に答えるたびに呼ぶ
+  ensureToday();
+  state.answeredToday = (state.answeredToday || 0) + 1;
+  if (state.answeredToday >= DAILY_GOAL) achieveGoal();
 }
 
 // ---------- ジャンル ----------
@@ -1069,6 +1097,7 @@ function onAnswer(ctx) {
   card.dataset.answered = "1";
 
   const ok = revealAnswer(ctx);
+  countAnswer();                          // 今日の目標に数える
   recordStudied(q);                       // 答えた問題を、記録する
   state.sinceOffer = (state.sinceOffer || 0) + 1;   // 前回の誘いから、何問答えたか
   addHistory(q);                          // 「今日勉強した問題」としても記録する
@@ -1183,6 +1212,7 @@ function onTestAnswer(ctx) {
   card.dataset.answered = "1";
 
   const ok = revealAnswer(ctx);
+  countAnswer();                          // ボス戦の問題も、今日の目標に数える
   if (!ok) {
     combo = 0;
     beep([220, 180], 0.15);
@@ -1314,8 +1344,20 @@ homeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(56px + env(safe-area-inset-b
 homeBtn.addEventListener("click", () => openMenu());
 document.body.appendChild(homeBtn);
 
+// 画面のいちばん上の細い線：今日の目標の進み具合
+const goalBar = document.createElement("div");
+goalBar.style.cssText = "position:fixed;top:0;left:0;height:4px;width:0;z-index:30;pointer-events:none;transition:width .3s;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);";
+document.body.appendChild(goalBar);
+function updateGoalUi() {
+  const done = state.lastGoalDate === todayStr();
+  const n = state.answeredDate === todayStr() ? Math.min(state.answeredToday || 0, DAILY_GOAL) : 0;
+  goalBar.style.width = (done ? 100 : (n / DAILY_GOAL) * 100) + "%";
+  homeBtn.textContent = `🏠 🔥${currentStreak()}日　${done ? "✔ 達成" : n + "/" + DAILY_GOAL + "問"}`;
+}
+
 let menuOpen = false;
 function updateModeButton() {
+  updateGoalUi();
   const hide = menuOpen ? "none" : "";
   modeBtn.style.display = hide;     // メニューを開いているあいだは、隠す
   homeBtn.style.display = hide;
@@ -1368,6 +1410,30 @@ function renderMenu(view) {
     });
     box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
   } else {
+    // ストリークと、今日の目標
+    const cs = currentStreak();
+    const gdone = state.lastGoalDate === todayStr();
+    const gn = state.answeredDate === todayStr() ? Math.min(state.answeredToday || 0, DAILY_GOAL) : 0;
+    const streakBox = el("div");
+    streakBox.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;text-align:center;";
+    const big = el("div", "", `🔥 ${cs}日連続`);
+    big.style.cssText = "font-size:28px;font-weight:800;";
+    const best = el("div", "", `最高 ${state.bestStreak || 0}日`);
+    best.style.cssText = "font-size:12px;opacity:.7;margin-bottom:10px;";
+    const track = el("div");
+    track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;";
+    const fill = el("div");
+    fill.style.cssText = `height:100%;width:${(gdone ? 100 : (gn / DAILY_GOAL) * 100)}%;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);`;
+    track.appendChild(fill);
+    let note;
+    if (gdone) note = "✔ 今日の目標を達成！ また明日も続けよう";
+    else if (cs > 0) note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、${cs + 1}日連続になります`;
+    else note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、ストリークが始まります`;
+    const noteEl = el("div", "", note);
+    noteEl.style.cssText = "font-size:13px;margin-top:8px;";
+    streakBox.appendChild(big); streakBox.appendChild(best); streakBox.appendChild(track); streakBox.appendChild(noteEl);
+    box.appendChild(streakBox);
+
     const info = el("div", "explain", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
     info.style.textAlign = "center";
     box.appendChild(info);
@@ -1480,6 +1546,11 @@ window.gameApi = {
     studiedSet = new Set(state.studied);
     state.history = (s.history && typeof s.history === "object" && !Array.isArray(s.history)) ? JSON.parse(JSON.stringify(s.history)) : {};
     state.yesterdayDone = s.yesterdayDone || "";
+    state.streak = s.streak || 0;
+    state.bestStreak = s.bestStreak || 0;
+    state.lastGoalDate = s.lastGoalDate || "";
+    state.answeredToday = (s.answeredDate === todayStr()) ? (s.answeredToday || 0) : 0;
+    state.answeredDate = todayStr();
     state.date = todayStr();
     state.bossesToday = (s.date === todayStr()) ? (s.bossesToday || 0) : 0;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
