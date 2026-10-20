@@ -18,13 +18,28 @@ const firebaseConfig = {
 };
 // =======================================================
 
-const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone"];
+const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone",
+  "streak", "bestStreak", "lastGoalDate", "answeredToday", "answeredDate"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
-const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "" };
+const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "" };
 const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
 const maxStr = (a, b) => ((a || "") > (b || "") ? (a || "") : (b || ""));   // 新しい日付のほうを残す
+// ストリークと、今日の目標は、新しいほうの記録を残す
+function mergeDaily(a, b) {
+  const t = new Date().toLocaleDateString("sv-SE");
+  const la = a.lastGoalDate || "", lb = b.lastGoalDate || "";
+  const win = la > lb ? a : lb > la ? b : ((a.streak || 0) >= (b.streak || 0) ? a : b);
+  const answered = Math.max(a.answeredDate === t ? (a.answeredToday || 0) : 0, b.answeredDate === t ? (b.answeredToday || 0) : 0);
+  return {
+    streak: win.streak || 0,
+    lastGoalDate: win.lastGoalDate || "",
+    bestStreak: Math.max(a.bestStreak || 0, b.bestStreak || 0, win.streak || 0),
+    answeredToday: answered,
+    answeredDate: t
+  };
+}
 // 「その日に勉強した問題」の記録は、日付ごとに、両方を合わせる
 const unionHist = (a, b) => {
   const o = {};
@@ -147,6 +162,7 @@ if (!configured) {
             cloud.studied = union(cloud.studied, local.studied);
             cloud.history = unionHist(cloud.history, local.history);
             cloud.yesterdayDone = maxStr(cloud.yesterdayDone, local.yesterdayDone);
+            Object.assign(cloud, mergeDaily(cloud, local));
           }
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
@@ -158,7 +174,8 @@ if (!configured) {
             date: local.date, bossesToday: local.bossesToday,
             studied: union(local.studied, cloud.studied),
             history: unionHist(local.history, cloud.history),
-            yesterdayDone: maxStr(local.yesterdayDone, cloud.yesterdayDone)
+            yesterdayDone: maxStr(local.yesterdayDone, cloud.yesterdayDone),
+            ...mergeDaily(local, cloud)
           });
         }
       } else if (!sameOwner) {
