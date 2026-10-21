@@ -101,7 +101,10 @@ if (!configured) {
         level: g.level || 1,
         xp: g.xp || 0,
         levelScore: (g.level || 1) * 1e6 + (g.xp || 0),   // レベル → 経験値の順に並べるための値
-        totalDefeated: g.totalDefeated || 0
+        totalDefeated: g.totalDefeated || 0,
+        streak: g.streak || 0,                 // 連続日数（途切れているかは、表示するときに lastGoalDate で判定）
+        bestStreak: g.bestStreak || 0,
+        lastGoalDate: g.lastGoalDate || ""
       };
       const key = JSON.stringify(data);
       if (key === lastLb) return;
@@ -254,9 +257,16 @@ if (!configured) {
   overlay.appendChild(panel);
   document.body.appendChild(overlay);
 
+  const dayKey = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString("sv-SE"); };
   const TABS = [
     { key: "level", label: "レベル", field: "levelScore", fmt: (d) => "Lv." + d.level },
-    { key: "boss", label: "ボス討伐数", field: "totalDefeated", fmt: (d) => (d.totalDefeated || 0) + "体" }
+    { key: "boss", label: "ボス討伐数", field: "totalDefeated", fmt: (d) => (d.totalDefeated || 0) + "体" },
+    {
+      key: "streak", label: "連続日数", field: "streak", fetch: 100,
+      fmt: (d) => "🔥" + d.streak + "日",
+      // いま連続中の人だけ（昨日か今日、目標を達成している人）。途切れた人の古い記録は出さない
+      valid: (d) => (d.streak || 0) > 0 && (d.lastGoalDate === dayKey(0) || d.lastGoalDate === dayKey(1))
+    }
   ];
   const tabBtns = {};
   TABS.forEach((t) => {
@@ -281,17 +291,20 @@ if (!configured) {
     try {
       clearTimeout(timer);
       await push();                                       // 自分の最新の記録を、先に反映
-      const snap = await getDocs(query(collection(db, "leaderboard"), orderBy(tab.field, "desc"), limit(50)));
+      const snap = await getDocs(query(collection(db, "leaderboard"), orderBy(tab.field, "desc"), limit(tab.fetch || 50)));
+      const rows = [];
+      snap.forEach((d) => rows.push({ id: d.id, data: d.data() }));
+      const shown = (tab.valid ? rows.filter((x) => tab.valid(x.data)) : rows).slice(0, 50);
       list.textContent = "";
-      if (snap.empty) { list.textContent = "まだ誰も登録されていません。"; return; }
+      if (shown.length === 0) { list.textContent = tab.valid ? "いま連続中の人は、まだいません。" : "まだ誰も登録されていません。"; return; }
       let rank = 0, prev = null, i = 0;
-      snap.forEach((d) => {
-        const data = d.data();
+      shown.forEach((item) => {
+        const data = item.data;
         i++;
         const val = data[tab.field];
         if (val !== prev) { rank = i; prev = val; }       // 同じ値なら、同じ順位
         const row = document.createElement("div");
-        const mine = user && d.id === user.uid;
+        const mine = user && item.id === user.uid;
         row.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;margin-top:6px;" +
           (mine ? "background:rgba(255,207,63,.18);border:1px solid rgba(255,207,63,.5);" : "background:rgba(255,255,255,.05);");
         const r = document.createElement("div");
@@ -308,7 +321,7 @@ if (!configured) {
       });
       const note = document.createElement("div");
       note.style.cssText = "margin-top:12px;font-size:12px;opacity:.7;";
-      note.textContent = "上位50人まで表示します。";
+      note.textContent = tab.valid ? "いま連続中の人（昨日か今日、目標を達成した人）を表示します。上位50人まで。" : "上位50人まで表示します。";
       list.appendChild(note);
     } catch (e) {
       console.error(e);
