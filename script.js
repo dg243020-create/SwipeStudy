@@ -944,61 +944,6 @@ function save() {
 
 let state = load();
 if (!state.nextOfferAt) state.nextOfferAt = rollOffer();   // 次のボス戦の誘いまで、何問か（ランダム）
-let boss = { hp: BOSS_MAX_HP, monster: MONSTERS[0// ========== ゲーム本体 ==========
-// game.js の「// ========== ゲーム本体 ==========」の行から、いちばん最後までを、このファイルの中身に置き換えてください。
-// （問題データ QUESTIONS の部分は、そのままで大丈夫です）
-const STORAGE_KEY = "swipeVocabRPG.v1";
-const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
-const BOSS_MAX_HP = 100;
-const BASE_XP = 10;             // 正解1回の経験値
-const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
-const TEST_SIZE = 10;           // ボス戦（テスト）の問題数
-const TEST_MIN = 5;             // ボス戦に挑戦するのに必要な、記録済みの問題数
-const OFFER_MIN = 20;           // ボス戦に誘うまでに、最低でも何問答えるか
-const OFFER_MAX = 30;           // 誘いが来るまでの問題数は、OFFER_MIN〜OFFER_MAX のあいだでランダム
-const DAILY_GOAL = 10;           // 1日の目標。この問数を解くと、その日のストリークが続く
-const YESTERDAY_BONUS_XP = 30;  // 昨日の分のテストを全問正解したときの、追加経験値（1日1回）
-const YESTERDAY_MIN = 3;        // 「昨日の分のテスト」に必要な、昨日勉強した問題の数
-const HISTORY_DAYS = 14;        // 何日分の「その日に勉強した問題」を残すか
-const FLASH_EFFECT = false;     // 3コンボ以上などで、画面が白く光る演出（true にすると復活）
-
-const MONSTERS = [
-  { emoji: "👾", name: "スライム語" },
-  { emoji: "🐲", name: "ドラゴン文法" },
-  { emoji: "👹", name: "オニ熟語" },
-  { emoji: "🦑", name: "クラーケン構文" },
-  { emoji: "🧟", name: "ゾンビ発音" },
-  { emoji: "🦖", name: "ティラノ長文" }
-];
-
-const $ = (id) => document.getElementById(id);
-const feed = $("feed");
-
-// ---------- 保存データ ----------
-function todayStr() {
-  return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
-}
-function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "" };
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    const s = Object.assign(base, saved);
-    if (!Array.isArray(s.studied)) s.studied = [];
-    if (!s.history || typeof s.history !== "object" || Array.isArray(s.history)) s.history = {};
-    if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
-    if (s.answeredDate !== todayStr()) { s.answeredDate = todayStr(); s.answeredToday = 0; }
-    return s;
-  } catch (e) {
-    return base;
-  }
-}
-function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
-  if (typeof window.onGameSaved === "function") { try { window.onGameSaved(); } catch (e) { /* 無視 */ } }
-}
-
-let state = load();
-if (!state.nextOfferAt) state.nextOfferAt = rollOffer();   // 次のボス戦の誘いまで、何問か（ランダム）
 let boss = { hp: BOSS_MAX_HP, monster: MONSTERS[0] };
 let combo = 0;
 let queue = [];
