@@ -17,6 +17,19 @@ const YESTERDAY_MIN = 3;        // 「昨日の分のテスト」に必要な、
 const HISTORY_DAYS = 14;        // 何日分の「その日に勉強した問題」を残すか
 const FLASH_EFFECT = false;     // 3コンボ以上などで、画面が白く光る演出（true にすると復活）
 
+// 週間クエスト：1週間にボスを何体倒すか、達成した週の数に応じたごほうび（おやすみ券）
+const QUEST_BOSSES = 5;                              // 1週間に倒すボスの数（週は月曜はじまり）
+const QUEST_REWARDS = { 2: 1, 4: 1, 6: 2, 7: 3 };    // 達成した週の数 → もらえる「おやすみ券」の枚数
+const QUEST_CYCLE = 7;                               // この週数を達成したら、ごほうびをもらって、最初からやりなおし
+const QUEST_CONSECUTIVE = false;                     // true にすると、1週でも達成できなかったら、0週目からやりなおし
+const REST_KEEP_DAYS = 60;                           // 「おやすみにした日」を、何日分残すか
+
+// 間違えた問題の復習
+const MISTAKE_MAX = 30;            // 記録しておく、間違えた問題の最大数（あふれたら、優先度の低いものからはずす）
+const MISTAKE_TIME_CAP = 60;       // 答えるまでにかかった時間は、この秒数までを数える
+const MISTAKE_REPEAT_BONUS = 20;   // 何度も間違えた問題の優先度に、1回ごとに足す秒数
+const REVIEW_REQUEUE = 5;          // 復習でまた間違えたら、何問あとに、もう一度出すか
+
 const MONSTERS = [
   { emoji: "👾", name: "スライム語" },
   { emoji: "🐲", name: "ドラゴン文法" },
@@ -34,12 +47,14 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "" };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0 };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
     if (!Array.isArray(s.studied)) s.studied = [];
     if (!s.history || typeof s.history !== "object" || Array.isArray(s.history)) s.history = {};
+    if (!Array.isArray(s.restDates)) s.restDates = [];
+    if (!Array.isArray(s.mistakes)) s.mistakes = [];
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
     if (s.answeredDate !== todayStr()) { s.answeredDate = todayStr(); s.answeredToday = 0; }
     return s;
@@ -53,12 +68,14 @@ function save() {
 }
 
 let state = load();
+ensureWeek();                                              // 週が変わっていたら、今週のクエストを新しくする
 if (!state.nextOfferAt) state.nextOfferAt = rollOffer();   // 次のボス戦の誘いまで、何問か（ランダム）
 let boss = { hp: BOSS_MAX_HP, monster: MONSTERS[0] };
 let combo = 0;
 let queue = [];
 let mode = "study";      // "study"（スワイプ勉強）か "test"（ボス戦）
 let test = null;         // ボス戦の進行状況 { list, index, correct }
+let review = null;       // 復習の進行状況 { queue, total, cleared }
 
 // ---------- ユーティリティ ----------
 function rollOffer() {
@@ -82,6 +99,7 @@ function qid(q) {
   return (h >>> 0).toString(36);
 }
 const BY_ID = new Map(QUESTIONS.map((q) => [qid(q), q]));
+state.mistakes = state.mistakes.filter((m) => m && BY_ID.has(m.id));   // 問題を書き換えて、なくなったものは、はずす
 let studiedSet = new Set(state.studied);
 function recordStudied(q) {
   const id = qid(q);
@@ -109,25 +127,187 @@ function yesterdayPool() {
   return (state.history[yesterdayStr()] || []).map((id) => BY_ID.get(id)).filter(Boolean);
 }
 
+// ---------- 間違えた問題の記録 ----------
+// 間違えた問題を、最大 MISTAKE_MAX 問まで記録する。答えるまでにかかった時間（秒）と、間違えた回数も、いっしょに残す。
+//   優先度 ＝ かかった時間（最大 MISTAKE_TIME_CAP 秒）＋（間違えた回数 − 1）× MISTAKE_REPEAT_BONUS
+//   復習では、優先度が高い順に出る。復習で正解したら記録からはずれ、また間違えたら優先度が上がる。
+const viewObserver = new IntersectionObserver((entries) => {   // カードが画面に出た時刻を、記録する
+  entries.forEach((e) => {
+    if (e.isIntersecting && e.intersectionRatio > 0.6 && e.target.dataset && !e.target.dataset.shownAt) {
+      e.target.dataset.shownAt = String(Date.now());
+      viewObserver.unobserve(e.target);
+    }
+  });
+}, { root: feed, threshold: [0.6] });
+function resetShownTimes() {      // メニューを開いていた時間などは、数えない
+  Array.from(feed.children).forEach((c) => {
+    if (c.dataset && c.dataset.kind && !c.dataset.answered && c.dataset.shownAt) c.dataset.shownAt = String(Date.now());
+  });
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resetShownTimes(); });
+function answerSeconds(card) {    // カードが出てから、答えるまでの秒数
+  const from = Number(card.dataset.shownAt) || Number(card.dataset.builtAt) || Date.now();
+  return Math.round(Math.min(MISTAKE_TIME_CAP, Math.max(0, (Date.now() - from) / 1000)) * 10) / 10;
+}
+function mistakeScore(m) {
+  return Math.min(m.t || 0, MISTAKE_TIME_CAP) + ((m.n || 1) - 1) * MISTAKE_REPEAT_BONUS;
+}
+function sortedMistakes() {       // 優先度が高い順（同じなら、新しい順）
+  return state.mistakes.filter((m) => BY_ID.has(m.id))
+    .sort((a, b) => mistakeScore(b) - mistakeScore(a) || (b.d || "").localeCompare(a.d || ""));
+}
+function recordMistake(q, sec) {
+  const id = qid(q);
+  const t = Math.round(Math.min(MISTAKE_TIME_CAP, Math.max(0, sec || 0)) * 10) / 10;
+  const m = state.mistakes.find((x) => x.id === id);
+  if (m) { m.n = (m.n || 1) + 1; m.t = Math.max(m.t || 0, t); m.d = todayStr(); }
+  else state.mistakes.push({ id, t, n: 1, d: todayStr() });
+  while (state.mistakes.length > MISTAKE_MAX) {     // あふれたら、今回の問題以外で、優先度がいちばん低いものをはずす
+    let worst = null;
+    state.mistakes.forEach((x) => { if (x.id !== id && (!worst || mistakeScore(x) < mistakeScore(worst))) worst = x; });
+    if (!worst) break;
+    state.mistakes.splice(state.mistakes.indexOf(worst), 1);
+  }
+  state.mistakesSeq = (state.mistakesSeq || 0) + 1;
+}
+function noteMistake(q, sec, result) {   // 間違えたときに呼ぶ。記録して、小さくお知らせする
+  recordMistake(q, sec);
+  const n = el("div", "explain", "🔁 間違えた問題に記録しました");
+  n.style.cssText = "font-size:12px;opacity:.7;";
+  result.appendChild(n);
+}
+
 // ---------- 毎日の目標とストリーク ----------
 // 1日に DAILY_GOAL 問（勉強でもボス戦でも、答えた問題の数）を解くと、その日が「達成」になり、連続日数（ストリーク）が1日増える。
 function ensureToday() {          // 日付をまたいだら、今日の分を0に戻す（0時で切り替わる）
   const t = todayStr();
   if (state.date !== t) { state.date = t; state.bossesToday = 0; }
   if (state.answeredDate !== t) { state.answeredDate = t; state.answeredToday = 0; }
+  ensureWeek();
 }
-function currentStreak() {        // 昨日までに達成していれば、続いている。それより前で止まっていたら、途切れている
-  if (state.lastGoalDate === todayStr() || state.lastGoalDate === yesterdayStr()) return state.streak || 0;
+// 「目標を達成した日」か「おやすみ券で休んだ日」のうち、いちばん新しい日（before を指定すると、その日より前だけを見る）
+function lastActiveDate(before) {
+  let best = "";
+  [state.lastGoalDate].concat(state.restDates || []).forEach((d) => {
+    if (d && (!before || d < before) && d > best) best = d;
+  });
+  return best;
+}
+function currentStreak() {        // 昨日までつながっていれば、続いている。それより前で止まっていたら、途切れている
+  const la = lastActiveDate();
+  if (la === todayStr() || la === yesterdayStr()) return state.streak || 0;
   return 0;
 }
 function achieveGoal() {
   if (state.lastGoalDate === todayStr()) return;
-  state.streak = (state.lastGoalDate === yesterdayStr()) ? (state.streak || 0) + 1 : 1;
+  // 昨日が「達成した日」か「おやすみにした日」なら、連続日数が1日増える（おやすみの日そのものは、日数に数えない）
+  state.streak = (lastActiveDate(todayStr()) === yesterdayStr()) ? (state.streak || 0) + 1 : 1;
   state.bestStreak = Math.max(state.bestStreak || 0, state.streak);
   state.lastGoalDate = todayStr();
   confetti(80);
   beep([523, 659, 784, 1047], 0.12);
   setTimeout(() => toast(`🔥 ${state.streak}日連続！ 今日の目標を達成！`), 900);
+}
+
+// ---------- 日付の計算 ----------
+function dateStr(d) { return d.toLocaleDateString("sv-SE"); }
+function addDays(str, n) {        // "2026-10-26" に n 日を足した日付
+  const d = new Date(str + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return dateStr(d);
+}
+function dayDiff(a, b) {          // a から b まで、何日あるか
+  return Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+}
+function weekStartStr(d) {        // その日がふくまれる週の、月曜日の日付
+  const x = new Date(d.getTime());
+  x.setHours(12, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return dateStr(x);
+}
+
+// ---------- 週間クエスト ----------
+// 1週間（月〜日）にボスを QUEST_BOSSES 体倒すと「その週を達成」。達成した週の数に応じて、おやすみ券がもらえる。
+function ensureWeek() {           // 週が変わっていたら、今週の分を0に戻す
+  const wk = weekStartStr(new Date());
+  if (state.questWeek === wk) return;
+  if (state.questWeek && QUEST_CONSECUTIVE) {
+    const cleared = state.questClearedWeek === state.questWeek;
+    const gap = Math.round(dayDiff(state.questWeek, wk) / 7);
+    if (!cleared || gap > 1) state.questWeeksDone = 0;      // 連続で達成できなかったら、やりなおし
+  }
+  state.questWeek = wk;
+  state.questBosses = 0;
+}
+function questOnBossDefeated() {  // ボスを倒したら呼ぶ。クエストを達成したときは、お知らせの文を返す
+  ensureWeek();
+  state.questBosses = (state.questBosses || 0) + 1;
+  state.questSeq = (state.questSeq || 0) + 1;
+  if (state.questBosses < QUEST_BOSSES || state.questClearedWeek === state.questWeek) return "";
+  state.questClearedWeek = state.questWeek;
+  state.questWeeksDone = (state.questWeeksDone || 0) + 1;
+  const n = state.questWeeksDone;
+  const reward = QUEST_REWARDS[n] || 0;
+  state.tickets = (state.tickets || 0) + reward;
+  let msg = `📅 今週のクエスト達成！（${n}週目）`;
+  if (reward) msg += `　🎫 おやすみ券 +${reward}枚`;
+  if (n >= QUEST_CYCLE) {
+    state.questWeeksDone = 0;
+    msg += "　クエストをすべてクリア！ また最初からです";
+  }
+  return msg;
+}
+function nextRewardText() {       // 次に、おやすみ券がもらえる週
+  const keys = Object.keys(QUEST_REWARDS).map(Number).sort((a, b) => a - b);
+  const k = keys.find((x) => x > (state.questWeeksDone || 0));
+  if (!k) return "";
+  return `次のごほうび：${k}週達成で 🎫×${QUEST_REWARDS[k]}（あと${k - (state.questWeeksDone || 0)}週）`;
+}
+
+// ---------- おやすみ券 ----------
+// 使うと、勉強しない日があっても、連続記録（ストリーク）が切れない。
+function addRestDay(d) {
+  if (!state.restDates.includes(d)) state.restDates.push(d);
+  const limit = addDays(todayStr(), -REST_KEEP_DAYS);
+  state.restDates = state.restDates.filter((x) => x >= limit);
+}
+function useRestToday() {         // 今日を、おやすみにする（券1枚）
+  ensureToday();
+  const t = todayStr();
+  if ((state.tickets || 0) < 1) { toast("おやすみ券がありません"); return false; }
+  if (currentStreak() <= 0) { toast("連続記録がないので、使えません"); return false; }
+  if (state.lastGoalDate === t) { toast("今日は、もう目標を達成しています"); return false; }
+  if (state.restDates.includes(t)) { toast("今日は、もうおやすみにしています"); return false; }
+  if (!confirm("おやすみ券を1枚使って、今日をおやすみにします。\n連続記録（🔥）は守られます。よろしいですか？")) return false;
+  state.tickets -= 1;
+  addRestDay(t);
+  state.questSeq = (state.questSeq || 0) + 1;
+  save();
+  updateHud();
+  toast("😴 今日は、おやすみです");
+  return true;
+}
+function rescueInfo() {           // 休んで連続記録が途切れている（けれど、券で取り戻せる）とき、何日分かを返す
+  const la = lastActiveDate();
+  if (!la || (state.streak || 0) <= 0) return null;
+  const y = yesterdayStr();
+  if (la >= y) return null;       // 昨日までつながっている
+  const n = dayDiff(la, y);
+  return (n >= 1 && n <= 30) ? { n, from: addDays(la, 1), to: y } : null;
+}
+function useRescue() {            // 休んだ日を、さかのぼっておやすみにする（1日につき券1枚）
+  ensureToday();
+  const info = rescueInfo();
+  if (!info) { toast("取り戻せる日はありません"); return false; }
+  if ((state.tickets || 0) < info.n) { toast(`おやすみ券があと ${info.n - (state.tickets || 0)}枚 必要です`); return false; }
+  if (!confirm(`おやすみ券を${info.n}枚使って、${info.from}〜${info.to}の${info.n}日分を、おやすみにします。\n連続記録（🔥${state.streak}日）が、つながります。よろしいですか？`)) return false;
+  for (let i = 0; i < info.n; i++) addRestDay(addDays(info.from, i));
+  state.tickets -= info.n;
+  state.questSeq = (state.questSeq || 0) + 1;
+  save();
+  updateHud();
+  toast(`🎫 連続記録を守りました（🔥${state.streak}日）`);
+  return true;
 }
 function countAnswer() {          // 問題に答えるたびに呼ぶ
   ensureToday();
@@ -271,6 +451,8 @@ function el(tag, cls, text) {
 function buildCard(q, label, kind, onPick) {
   const card = el("section", "card");
   card.dataset.kind = kind;
+  card.dataset.builtAt = String(Date.now());
+  viewObserver.observe(card);                 // 画面に出た時刻を知るため
   card.appendChild(el("div", "q-label", label));
   const qt = el("div", "q-text", q.q);
   if (q.q.length > 12) qt.classList.add("small"); // 長い問題文は小さめに
@@ -322,6 +504,7 @@ function onAnswer(ctx) {
 
   const ok = revealAnswer(ctx);
   countAnswer();                          // 今日の目標に数える
+  if (!ok) noteMistake(q, answerSeconds(card), result);   // 間違えた問題として記録する
   recordStudied(q);                       // 答えた問題を、記録する
   state.sinceOffer = (state.sinceOffer || 0) + 1;   // 前回の誘いから、何問答えたか
   addHistory(q);                          // 「今日勉強した問題」としても記録する
@@ -390,6 +573,7 @@ function showDoneCard() {
 function beginTest(list, kind, title, icon, retry) {
   test = { list: shuffle(list).slice(0, TEST_SIZE), index: 0, correct: 0, kind, title, icon, retry };   // 出題順もランダム
   mode = "test";
+  review = null;
   bossActive = false;
   boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
   combo = 0;
@@ -437,6 +621,7 @@ function onTestAnswer(ctx) {
 
   const ok = revealAnswer(ctx);
   countAnswer();                          // ボス戦の問題も、今日の目標に数える
+  if (!ok) noteMistake(ctx.q, answerSeconds(card), result);   // 間違えた問題として記録する
   if (!ok) {
     combo = 0;
     beep([220, 180], 0.15);
@@ -520,6 +705,7 @@ function testCleared(result) {
   state.totalDefeated++;
   state.bossesToday++;
   gainXp(BOSS_BONUS_XP);
+  const qmsg = questOnBossDefeated();      // 週間クエストに数える（達成したら、お知らせが返ってくる）
   save();
   updateHud();
   confetti(100);
@@ -532,6 +718,12 @@ function testCleared(result) {
   c.appendChild(el("div", "big-emoji", "🏆"));
   c.appendChild(el("div", "q-text", `${name} を撃破！`));
   c.appendChild(el("div", "explain", `${total}問 全問正解！ ／ 最高コンボ ${state.bestCombo} ／ 通算 ${state.totalDefeated} 体`));
+  if (qmsg) {
+    const qe = el("div", "explain", qmsg);
+    qe.style.cssText = "font-weight:800;color:#ffcf3f;";
+    c.appendChild(qe);
+    setTimeout(() => toast(qmsg), 700);
+  }
   if (finished) {
     c.appendChild(el("div", "explain", "今日の探索はここまで。おつかれさま！また明日 🌙"));
   } else {
@@ -544,10 +736,96 @@ function testCleared(result) {
   feed.appendChild(c);
 }
 
-function endTest() {
+function endTest() {              // ボス戦・復習をやめて、勉強にもどる
   mode = "study";
   test = null;
+  review = null;
   rebuildFeed();
+}
+
+// ---------- 間違えた問題の復習 ----------
+function startReview() {
+  const ids = sortedMistakes().map((m) => m.id);
+  if (ids.length === 0) { toast("間違えた問題は、まだありません"); return; }
+  review = { queue: ids, total: ids.length, cleared: 0 };
+  mode = "review";
+  test = null;
+  bossActive = false;
+  boss = { hp: BOSS_MAX_HP, monster: { emoji: "🔁", name: "間違えた問題の復習" } };
+  combo = 0;
+  observer.disconnect();
+  feed.textContent = "";
+  feed.scrollTop = 0;
+  updateHud();
+  addReviewCard();
+}
+
+function addReviewCard() {
+  if (!review || review.queue.length === 0) { showReviewDone(); return; }
+  const id = review.queue[0];
+  const q = BY_ID.get(id);
+  if (!q) { review.queue.shift(); addReviewCard(); return; }
+  const card = buildCard(q, `🔁 復習 のこり${review.queue.length}問　${q.label || ""}`, "r", onReviewAnswer);
+  feed.appendChild(card);
+}
+
+function onReviewAnswer(ctx) {
+  const { card, q, result } = ctx;
+  if (card.dataset.answered === "1" || !review) return;
+  card.dataset.answered = "1";
+  const sec = answerSeconds(card);
+  const ok = revealAnswer(ctx);
+  countAnswer();                          // 復習の問題も、今日の目標に数える
+  const id = qid(q);
+  review.queue.shift();                   // 先頭が、いま答えた問題
+  let note;
+  if (ok) {
+    state.mistakes = state.mistakes.filter((m) => m.id !== id);   // 正解したら、記録からはずす
+    state.mistakesSeq = (state.mistakesSeq || 0) + 1;
+    review.cleared++;
+    combo++;
+    state.bestCombo = Math.max(state.bestCombo, combo);
+    gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
+    beep([660, 880]);
+    retrigger($("combo"), "pop");
+    confetti(combo >= 3 ? 40 : 12);
+    note = "✨ 克服！ 間違えた問題の記録から、はずしました";
+  } else {
+    combo = 0;
+    beep([220, 180], 0.15);
+    recordMistake(q, sec);                // 間違えた回数が増えて、優先度が上がる
+    if (review.queue.length > 0) {
+      const at = Math.min(REVIEW_REQUEUE, review.queue.length);
+      review.queue.splice(at, 0, id);     // at問あとに、もう一度出す
+      note = `🔁 もう一度、${at}問あとに出ます`;
+    } else {
+      note = "🔁 まだ記録に残っています。また今度、復習しよう";
+    }
+  }
+  const ne = el("div", "explain", note);
+  ne.style.cssText = "font-weight:700;margin-top:6px;";
+  result.appendChild(ne);
+  result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
+  boss.hp = BOSS_MAX_HP * Math.min(1, state.mistakes.length / Math.max(1, review.total));
+  updateHud();
+  save();
+  addReviewCard();                        // 次のカード（問題がなければ、おしまいのカード）
+}
+
+function showReviewDone() {
+  const left = state.mistakes.length;
+  const cleared = review ? review.cleared : 0;
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", left === 0 ? "🎉" : "🔁"));
+  c.appendChild(el("div", "q-text", left === 0 ? "復習、ぜんぶ克服！" : "復習おわり！"));
+  c.appendChild(el("div", "explain", `克服 ${cleared}問　／　まだ記録に残っている問題 ${left}問`));
+  const b = el("button", "btn", "📖 勉強にもどる");
+  b.type = "button";
+  b.addEventListener("click", endTest);
+  c.appendChild(b);
+  if (left === 0) { confetti(80); beep([523, 659, 784, 1047], 0.12); }
+  feed.appendChild(c);
 }
 
 // ---------- 画面の切り替えボタン（右下） ----------
@@ -559,7 +837,7 @@ const FLOAT_STYLE = [
 const modeBtn = document.createElement("button");
 modeBtn.type = "button";
 modeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(10px + env(safe-area-inset-bottom, 0px))";
-modeBtn.addEventListener("click", () => { if (mode === "test") endTest(); else startTest(); });
+modeBtn.addEventListener("click", () => { if (mode !== "study") endTest(); else startTest(); });
 document.body.appendChild(modeBtn);
 const homeBtn = document.createElement("button");
 homeBtn.type = "button";
@@ -576,7 +854,9 @@ function updateGoalUi() {
   const done = state.lastGoalDate === todayStr();
   const n = state.answeredDate === todayStr() ? Math.min(state.answeredToday || 0, DAILY_GOAL) : 0;
   goalBar.style.width = (done ? 100 : (n / DAILY_GOAL) * 100) + "%";
-  homeBtn.textContent = `🏠 🔥${currentStreak()}日　${done ? "✔ 達成" : n + "/" + DAILY_GOAL + "問"}`;
+  const resting = !done && (state.restDates || []).includes(todayStr());
+  const tk = (state.tickets || 0) > 0 ? `　🎫${state.tickets}` : "";
+  homeBtn.textContent = `🏠 🔥${currentStreak()}日　${done ? "✔ 達成" : resting ? "😴 おやすみ" : n + "/" + DAILY_GOAL + "問"}${tk}`;
 }
 
 let menuOpen = false;
@@ -585,7 +865,7 @@ function updateModeButton() {
   const hide = menuOpen ? "none" : "";
   modeBtn.style.display = hide;     // メニューを開いているあいだは、隠す
   homeBtn.style.display = hide;
-  modeBtn.textContent = mode === "test" ? "📖 勉強にもどる" : `⚔ ボス戦（記録 ${studiedPool().length} 問）`;
+  modeBtn.textContent = mode !== "study" ? "📖 勉強にもどる" : `⚔ ボス戦（記録 ${studiedPool().length} 問）`;
 }
 
 // ---------- スタートメニュー ----------
@@ -618,7 +898,66 @@ function recordedCount(g) {
   }).length;
 }
 
+// 週間クエストの表示
+function buildQuestBox() {
+  ensureWeek();
+  const done = state.questClearedWeek === state.questWeek;
+  const n = Math.min(state.questBosses || 0, QUEST_BOSSES);
+  const daysLeft = 7 - ((new Date().getDay() + 6) % 7);       // 日曜日まで（今日をふくむ）
+  const b = el("div");
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;";
+  const t = el("div", "", `📅 今週のクエスト：ボスを${QUEST_BOSSES}体倒す`);
+  t.style.cssText = "font-weight:800;font-size:16px;";
+  const track = el("div");
+  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:10px 0 8px;";
+  const fill = el("div");
+  fill.style.cssText = `height:100%;width:${(n / QUEST_BOSSES) * 100}%;background:linear-gradient(90deg,#6ea8ff,#b78bff);`;
+  track.appendChild(fill);
+  const l1 = el("div", "", `${n}/${QUEST_BOSSES}体　${done ? "✔ 今週は達成！" : `あと${QUEST_BOSSES - n}体（日曜日まで あと${daysLeft}日）`}`);
+  l1.style.cssText = "font-size:13px;";
+  const l2 = el("div", "", `達成した週：${state.questWeeksDone || 0}/${QUEST_CYCLE}週　${nextRewardText()}`);
+  l2.style.cssText = "font-size:12px;opacity:.8;margin-top:4px;";
+  b.appendChild(t); b.appendChild(track); b.appendChild(l1); b.appendChild(l2);
+  if (QUEST_CONSECUTIVE) {
+    const l3 = el("div", "", "※1週でも達成できないと、0週目からやりなおしです");
+    l3.style.cssText = "font-size:11px;opacity:.65;margin-top:4px;";
+    b.appendChild(l3);
+  }
+  return b;
+}
+
+// おやすみ券の表示と、使うボタン
+function buildTicketBox() {
+  const tk = state.tickets || 0;
+  const wrap = el("div");
+  wrap.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;";
+  const head = el("div", "", `🎫 おやすみ券　${tk}枚`);
+  head.style.cssText = "font-size:20px;font-weight:800;text-align:center;";
+  const sub = el("div", "", "使うと、勉強しない日があっても、連続記録（🔥）が切れません");
+  sub.style.cssText = "font-size:12px;opacity:.75;text-align:center;margin-bottom:4px;";
+  wrap.appendChild(head); wrap.appendChild(sub);
+
+  const t = todayStr();
+  let why = "";
+  if (tk < 1) why = "おやすみ券がありません";
+  else if (currentStreak() <= 0) why = "連続記録がないので、使えません";
+  else if (state.lastGoalDate === t) why = "今日は、もう目標を達成しています";
+  else if (state.restDates.includes(t)) why = "今日は、もうおやすみにしています";
+  wrap.appendChild(menuBtn("😴 今日をおやすみにする", why || "券を1枚使います。今日は勉強しなくても、連続記録が続きます",
+    () => { if (useRestToday()) renderMenu("main"); }, !!why));
+
+  const info = rescueInfo();
+  if (info) {
+    const lack = info.n - tk;
+    wrap.appendChild(menuBtn(`⏪ 休んだ${info.n}日分を取り戻す`,
+      lack > 0 ? `あと${lack}枚、券が必要です（連続記録 🔥${state.streak}日）` : `券を${info.n}枚使って、連続記録（🔥${state.streak}日）を守ります`,
+      () => { if (useRescue()) renderMenu("main"); }, lack > 0));
+  }
+  return wrap;
+}
+
 function renderMenu(view) {
+  ensureToday();
   menu.textContent = "";
   const box = el("div");
   box.style.cssText = "width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;";
@@ -650,13 +989,17 @@ function renderMenu(view) {
     fill.style.cssText = `height:100%;width:${(gdone ? 100 : (gn / DAILY_GOAL) * 100)}%;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);`;
     track.appendChild(fill);
     let note;
+    const resting = state.restDates.includes(todayStr());
     if (gdone) note = "✔ 今日の目標を達成！ また明日も続けよう";
+    else if (resting) note = "😴 今日は、おやすみ券を使っています。連続記録は守られています";
     else if (cs > 0) note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、${cs + 1}日連続になります`;
     else note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、ストリークが始まります`;
     const noteEl = el("div", "", note);
     noteEl.style.cssText = "font-size:13px;margin-top:8px;";
     streakBox.appendChild(big); streakBox.appendChild(best); streakBox.appendChild(track); streakBox.appendChild(noteEl);
     box.appendChild(streakBox);
+    box.appendChild(buildQuestBox());
+    box.appendChild(buildTicketBox());
 
     const info = el("div", "explain", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
     info.style.textAlign = "center";
@@ -679,6 +1022,10 @@ function renderMenu(view) {
         : (y < YESTERDAY_MIN ? `昨日の記録 ${y}問（${YESTERDAY_MIN}問以上で挑戦できます）`
           : `昨日勉強した ${y}問から、最大${TEST_SIZE}問。全問正解で追加経験値 +${YESTERDAY_BONUS_XP}`),
       () => { closeMenu(); startYesterdayTest(); }, yDone || y < YESTERDAY_MIN));
+    const mc = sortedMistakes().length;
+    box.appendChild(menuBtn("🔁 間違えた問題の復習",
+      mc ? `いま ${mc}問（最大${MISTAKE_MAX}問）。時間がかかった問題・何度も間違えた問題から出ます` : "間違えた問題は、まだありません",
+      () => { closeMenu(); startReview(); }, mc === 0));
     box.appendChild(menuBtn("🏆 ランキング", "レベル・ボス討伐数", () => {
       if (typeof window.openRanking === "function") window.openRanking();
       else alert("ランキングを使うには、ログイン機能（cloud.js）が必要です。");
@@ -694,6 +1041,7 @@ function openMenu(view) {
 }
 function closeMenu() {
   menuOpen = false;
+  resetShownTimes();                // メニューを開いていた時間は、答えるまでの時間に数えない
   menu.style.display = "none";
   updateModeButton();
 }
@@ -727,6 +1075,7 @@ function rebuildFeed() {
   feed.scrollTop = 0;
   mode = "study";
   test = null;
+  review = null;
   boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
   combo = 0;
   updateHud();
@@ -777,6 +1126,18 @@ window.gameApi = {
     state.answeredDate = todayStr();
     state.date = todayStr();
     state.bossesToday = (s.date === todayStr()) ? (s.bossesToday || 0) : 0;
+    state.tickets = s.tickets || 0;
+    state.restDates = Array.isArray(s.restDates) ? s.restDates.slice() : [];
+    state.questWeek = s.questWeek || "";
+    state.questBosses = s.questBosses || 0;
+    state.questWeeksDone = s.questWeeksDone || 0;
+    state.questClearedWeek = s.questClearedWeek || "";
+    state.questSeq = s.questSeq || 0;
+    state.mistakes = (Array.isArray(s.mistakes) ? s.mistakes : [])
+      .filter((m) => m && BY_ID.has(m.id)).slice(0, MISTAKE_MAX)
+      .map((m) => ({ id: m.id, t: m.t || 0, n: m.n || 1, d: m.d || "" }));
+    state.mistakesSeq = s.mistakesSeq || 0;
+    ensureWeek();
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
     rebuildFeed();
   }
