@@ -19,17 +19,25 @@ const firebaseConfig = {
 // =======================================================
 
 const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone",
-  "streak", "bestStreak", "lastGoalDate", "answeredToday", "answeredDate"];
+  "streak", "bestStreak", "lastGoalDate", "answeredToday", "answeredDate",
+  "tickets", "restDates", "questWeek", "questBosses", "questWeeksDone", "questClearedWeek", "questSeq", "mistakes", "mistakesSeq"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
-const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "" };
+const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "",
+  tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0 };
 const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
 const maxStr = (a, b) => ((a || "") > (b || "") ? (a || "") : (b || ""));   // 新しい日付のほうを残す
+// 目標を達成した日か、おやすみ券で休んだ日のうち、いちばん新しい日
+function lastActiveOf(s) {
+  let best = s.lastGoalDate || "";
+  (s.restDates || []).forEach((d) => { if (d > best) best = d; });
+  return best;
+}
 // ストリークと、今日の目標は、新しいほうの記録を残す
 function mergeDaily(a, b) {
   const t = new Date().toLocaleDateString("sv-SE");
-  const la = a.lastGoalDate || "", lb = b.lastGoalDate || "";
+  const la = lastActiveOf(a), lb = lastActiveOf(b);
   const win = la > lb ? a : lb > la ? b : ((a.streak || 0) >= (b.streak || 0) ? a : b);
   const answered = Math.max(a.answeredDate === t ? (a.answeredToday || 0) : 0, b.answeredDate === t ? (b.answeredToday || 0) : 0);
   return {
@@ -39,6 +47,26 @@ function mergeDaily(a, b) {
     answeredToday: answered,
     answeredDate: t
   };
+}
+// おやすみ券と週間クエストは、「更新回数（questSeq）」が大きいほうの記録を残す。おやすみにした日は、両方を合わせる
+function mergeQuest(a, b) {
+  const pa = a.questSeq || 0, pb = b.questSeq || 0;
+  const win = pa >= pb ? a : b;
+  return {
+    tickets: win.tickets || 0,
+    questWeek: win.questWeek || "",
+    questBosses: win.questBosses || 0,
+    questWeeksDone: win.questWeeksDone || 0,
+    questClearedWeek: win.questClearedWeek || "",
+    questSeq: Math.max(pa, pb),
+    restDates: union(a.restDates, b.restDates)
+  };
+}
+// 間違えた問題の記録は、「更新回数（mistakesSeq）」が大きいほうを残す（復習で消した問題が、復活しないように）
+function mergeMistakes(a, b) {
+  const pa = a.mistakesSeq || 0, pb = b.mistakesSeq || 0;
+  const win = pa >= pb ? a : b;
+  return { mistakes: Array.isArray(win.mistakes) ? win.mistakes : [], mistakesSeq: Math.max(pa, pb) };
 }
 // 「その日に勉強した問題」の記録は、日付ごとに、両方を合わせる
 const unionHist = (a, b) => {
@@ -104,7 +132,7 @@ if (!configured) {
         totalDefeated: g.totalDefeated || 0,
         streak: g.streak || 0,                 // 連続日数（途切れているかは、表示するときに lastGoalDate で判定）
         bestStreak: g.bestStreak || 0,
-        lastGoalDate: g.lastGoalDate || ""
+        lastGoalDate: lastActiveOf(g)          // 目標を達成した日か、おやすみ券で休んだ日（連続中かどうかの判定に使う）
       };
       const key = JSON.stringify(data);
       if (key === lastLb) return;
@@ -166,6 +194,8 @@ if (!configured) {
             cloud.history = unionHist(cloud.history, local.history);
             cloud.yesterdayDone = maxStr(cloud.yesterdayDone, local.yesterdayDone);
             Object.assign(cloud, mergeDaily(cloud, local));
+            Object.assign(cloud, mergeQuest(cloud, local));
+            Object.assign(cloud, mergeMistakes(cloud, local));
           }
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
@@ -178,7 +208,9 @@ if (!configured) {
             studied: union(local.studied, cloud.studied),
             history: unionHist(local.history, cloud.history),
             yesterdayDone: maxStr(local.yesterdayDone, cloud.yesterdayDone),
-            ...mergeDaily(local, cloud)
+            ...mergeDaily(local, cloud),
+            ...mergeQuest(local, cloud),
+            ...mergeMistakes(local, cloud)
           });
         }
       } else if (!sameOwner) {
