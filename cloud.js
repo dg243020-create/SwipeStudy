@@ -20,12 +20,13 @@ const firebaseConfig = {
 
 const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone",
   "streak", "bestStreak", "lastGoalDate", "answeredToday", "answeredDate",
-  "tickets", "restDates", "questWeek", "questBosses", "questWeeksDone", "questClearedWeek", "questSeq", "mistakes", "mistakesSeq"];
+  "tickets", "restDates", "questWeek", "questBosses", "questWeeksDone", "questClearedWeek", "questSeq", "mistakes", "mistakesSeq", "stats", "badges"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
 const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "",
-  tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0 };
+  tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0,
+  stats: { answered: 0, correct: 0, cleared: 0, questWeeks: 0, restUsed: 0, bestDay: 0, genres: {}, days: {} }, badges: {} };
 const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
 const maxStr = (a, b) => ((a || "") > (b || "") ? (a || "") : (b || ""));   // 新しい日付のほうを残す
 // 目標を達成した日か、おやすみ券で休んだ日のうち、いちばん新しい日
@@ -67,6 +68,31 @@ function mergeMistakes(a, b) {
   const pa = a.mistakesSeq || 0, pb = b.mistakesSeq || 0;
   const win = pa >= pb ? a : b;
   return { mistakes: Array.isArray(win.mistakes) ? win.mistakes : [], mistakesSeq: Math.max(pa, pb) };
+}
+// 統計は、数字ごとに「大きいほう」を残す（数は増える一方なので）。バッジは、両方を合わせる（早い日付を残す）
+const maxN = (a, b) => Math.max(a || 0, b || 0);
+function mergePairs(a, b) {       // { キー: [答えた数, 正解数] } を、キーごと・数字ごとに、大きいほうにする
+  const o = {};
+  new Set([...Object.keys(a || {}), ...Object.keys(b || {})]).forEach((k) => {
+    const x = (a || {})[k] || [0, 0], y = (b || {})[k] || [0, 0];
+    o[k] = [maxN(x[0], y[0]), maxN(x[1], y[1])];
+  });
+  return o;
+}
+function mergeStats(a, b) {
+  const x = a.stats || {}, y = b.stats || {};
+  const badges = Object.assign({}, b.badges || {});
+  Object.keys(a.badges || {}).forEach((k) => {
+    badges[k] = (badges[k] && badges[k] < a.badges[k]) ? badges[k] : a.badges[k];
+  });
+  return {
+    stats: {
+      answered: maxN(x.answered, y.answered), correct: maxN(x.correct, y.correct), cleared: maxN(x.cleared, y.cleared),
+      questWeeks: maxN(x.questWeeks, y.questWeeks), restUsed: maxN(x.restUsed, y.restUsed), bestDay: maxN(x.bestDay, y.bestDay),
+      genres: mergePairs(x.genres, y.genres), days: mergePairs(x.days, y.days)
+    },
+    badges
+  };
 }
 // 「その日に勉強した問題」の記録は、日付ごとに、両方を合わせる
 const unionHist = (a, b) => {
@@ -196,6 +222,7 @@ if (!configured) {
             Object.assign(cloud, mergeDaily(cloud, local));
             Object.assign(cloud, mergeQuest(cloud, local));
             Object.assign(cloud, mergeMistakes(cloud, local));
+            Object.assign(cloud, mergeStats(cloud, local));
           }
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
@@ -210,7 +237,8 @@ if (!configured) {
             yesterdayDone: maxStr(local.yesterdayDone, cloud.yesterdayDone),
             ...mergeDaily(local, cloud),
             ...mergeQuest(local, cloud),
-            ...mergeMistakes(local, cloud)
+            ...mergeMistakes(local, cloud),
+            ...mergeStats(local, cloud)
           });
         }
       } else if (!sameOwner) {
