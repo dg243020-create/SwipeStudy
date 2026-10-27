@@ -30,6 +30,8 @@ const MISTAKE_TIME_CAP = 60;       // 答えるまでにかかった時間は、
 const MISTAKE_REPEAT_BONUS = 20;   // 何度も間違えた問題の優先度に、1回ごとに足す秒数
 const REVIEW_REQUEUE = 5;          // 復習でまた間違えたら、何問あとに、もう一度出すか
 
+const STATS_DAYS = 30;             // 日ごとの「答えた問題数」を、何日分残すか（統計のグラフ用）
+
 const MONSTERS = [
   { emoji: "👾", name: "スライム語" },
   { emoji: "🐲", name: "ドラゴン文法" },
@@ -47,7 +49,7 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0 };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0, stats: normalizeStats(null), badges: {} };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
@@ -55,6 +57,8 @@ function load() {
     if (!s.history || typeof s.history !== "object" || Array.isArray(s.history)) s.history = {};
     if (!Array.isArray(s.restDates)) s.restDates = [];
     if (!Array.isArray(s.mistakes)) s.mistakes = [];
+    s.stats = normalizeStats(s.stats);
+    s.badges = normalizeBadges(s.badges);
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
     if (s.answeredDate !== todayStr()) { s.answeredDate = todayStr(); s.answeredToday = 0; }
     return s;
@@ -63,6 +67,7 @@ function load() {
   }
 }
 function save() {
+  try { checkBadges(); } catch (e) { /* バッジの判定に失敗しても、遊べる */ }
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても遊べる */ }
   if (typeof window.onGameSaved === "function") { try { window.onGameSaved(); } catch (e) { /* 無視 */ } }
 }
@@ -177,6 +182,95 @@ function noteMistake(q, sec, result) {   // 間違えたときに呼ぶ。記録
   result.appendChild(n);
 }
 
+// ---------- 学習の統計 ----------
+// 答えた問題数と正解数を、全体・教科ごと・日ごとに数える。（このアップデート以降の記録）
+function normalizeStats(x) {
+  const n = (v) => (typeof v === "number" && isFinite(v) && v > 0) ? Math.floor(v) : 0;
+  const pairs = (o) => {
+    const r = {};
+    if (o && typeof o === "object" && !Array.isArray(o)) {
+      Object.keys(o).forEach((k) => { const p = o[k]; if (Array.isArray(p)) r[k] = [n(p[0]), n(p[1])]; });
+    }
+    return r;
+  };
+  x = (x && typeof x === "object") ? x : {};
+  const days = pairs(x.days);
+  const keys = Object.keys(days).sort();
+  while (keys.length > STATS_DAYS) delete days[keys.shift()];
+  return { answered: n(x.answered), correct: n(x.correct), cleared: n(x.cleared), questWeeks: n(x.questWeeks),
+    restUsed: n(x.restUsed), bestDay: n(x.bestDay), genres: pairs(x.genres), days };
+}
+function normalizeBadges(o) {
+  const r = {};
+  if (o && typeof o === "object" && !Array.isArray(o)) {
+    Object.keys(o).forEach((k) => { if (typeof o[k] === "string") r[k] = o[k]; });
+  }
+  return r;
+}
+function recordStats(q, ok) {     // 問題に答えるたびに呼ぶ（勉強・ボス戦・復習のどれでも）
+  const st = state.stats;
+  const g = genreOf(q);
+  const d = todayStr();
+  const ge = st.genres[g] || (st.genres[g] = [0, 0]);
+  const de = st.days[d] || (st.days[d] = [0, 0]);
+  st.answered++; ge[0]++; de[0]++;
+  if (ok) { st.correct++; ge[1]++; de[1]++; }
+  st.bestDay = Math.max(st.bestDay || 0, de[0]);
+  const keys = Object.keys(st.days).sort();
+  while (keys.length > STATS_DAYS) delete st.days[keys.shift()];
+}
+function pct(c, a) { return a > 0 ? Math.round((c * 100) / a) : 0; }
+
+// ---------- バッジ ----------
+// get() が goal 以上になったら、バッジを獲得する。（goal の数字を変えると、難しさを変えられる）
+const BADGES = [
+  { id: "lv5",    icon: "🌱", name: "見習い勉強家",     desc: "レベル5に到達",             goal: 5,    unit: "",   get: () => state.level },
+  { id: "lv10",   icon: "⭐", name: "勉強家",           desc: "レベル10に到達",            goal: 10,   unit: "",   get: () => state.level },
+  { id: "lv20",   icon: "🌟", name: "達人",             desc: "レベル20に到達",            goal: 20,   unit: "",   get: () => state.level },
+  { id: "lv30",   icon: "👑", name: "賢者",             desc: "レベル30に到達",            goal: 30,   unit: "",   get: () => state.level },
+  { id: "ans100", icon: "📘", name: "100問チャレンジ",   desc: "100問に答える",             goal: 100,  unit: "問", get: () => state.stats.answered },
+  { id: "ans500", icon: "📗", name: "500問チャレンジ",   desc: "500問に答える",             goal: 500,  unit: "問", get: () => state.stats.answered },
+  { id: "ans1k",  icon: "📚", name: "1000問の旅",        desc: "1000問に答える",            goal: 1000, unit: "問", get: () => state.stats.answered },
+  { id: "ans3k",  icon: "🗻", name: "3000問の山",        desc: "3000問に答える",            goal: 3000, unit: "問", get: () => state.stats.answered },
+  { id: "acc80",  icon: "🎯", name: "命中率80％",        desc: "100問以上答えて、正解率80％以上", goal: 80, unit: "％", get: () => state.stats.answered >= 100 ? pct(state.stats.correct, state.stats.answered) : 0 },
+  { id: "st3",    icon: "🔥", name: "火がついた",        desc: "3日連続で、目標を達成",       goal: 3,    unit: "日", get: () => state.bestStreak || 0 },
+  { id: "st7",    icon: "🔥", name: "燃えてきた",        desc: "7日連続で、目標を達成",       goal: 7,    unit: "日", get: () => state.bestStreak || 0 },
+  { id: "st14",   icon: "🔥", name: "止まらない",        desc: "14日連続で、目標を達成",      goal: 14,   unit: "日", get: () => state.bestStreak || 0 },
+  { id: "st30",   icon: "🌋", name: "ひと月の炎",        desc: "30日連続で、目標を達成",      goal: 30,   unit: "日", get: () => state.bestStreak || 0 },
+  { id: "st100",  icon: "🌠", name: "伝説の連続記録",     desc: "100日連続で、目標を達成",     goal: 100,  unit: "日", get: () => state.bestStreak || 0 },
+  { id: "boss1",  icon: "⚔️", name: "初陣",             desc: "ボスを1体倒す",             goal: 1,    unit: "体", get: () => state.totalDefeated },
+  { id: "boss10", icon: "🗡️", name: "ボスハンター",      desc: "ボスを10体倒す",            goal: 10,   unit: "体", get: () => state.totalDefeated },
+  { id: "boss30", icon: "🛡️", name: "歴戦の勇者",        desc: "ボスを30体倒す",            goal: 30,   unit: "体", get: () => state.totalDefeated },
+  { id: "boss100",icon: "🏰", name: "ボスの天敵",        desc: "ボスを100体倒す",           goal: 100,  unit: "体", get: () => state.totalDefeated },
+  { id: "cmb10",  icon: "💥", name: "コンボ10",          desc: "10コンボを出す",            goal: 10,   unit: "",   get: () => state.bestCombo },
+  { id: "cmb20",  icon: "⚡", name: "コンボ20",          desc: "20コンボを出す",            goal: 20,   unit: "",   get: () => state.bestCombo },
+  { id: "cmb50",  icon: "🌪️", name: "コンボ50",          desc: "50コンボを出す",            goal: 50,   unit: "",   get: () => state.bestCombo },
+  { id: "day50",  icon: "💪", name: "1日50問",           desc: "1日に50問に答える",          goal: 50,   unit: "問", get: () => state.stats.bestDay },
+  { id: "day100", icon: "🏋️", name: "1日100問",          desc: "1日に100問に答える",         goal: 100,  unit: "問", get: () => state.stats.bestDay },
+  { id: "qw1",    icon: "📅", name: "今週の主役",        desc: "週間クエストを、はじめて達成",  goal: 1,    unit: "週", get: () => state.stats.questWeeks },
+  { id: "qw7",    icon: "🏆", name: "クエストマスター",   desc: "週間クエストを、合計7週達成",   goal: 7,    unit: "週", get: () => state.stats.questWeeks },
+  { id: "rest1",  icon: "😴", name: "ちゃんと休む",       desc: "おやすみ券を使う",           goal: 1,    unit: "日", get: () => state.stats.restUsed },
+  { id: "clr1",   icon: "✨", name: "克服の第一歩",       desc: "復習で、間違えた問題を克服",   goal: 1,    unit: "問", get: () => state.stats.cleared },
+  { id: "clr30",  icon: "🧠", name: "復習マスター",       desc: "復習で、30問を克服",         goal: 30,   unit: "問", get: () => state.stats.cleared },
+  { id: "gen100", icon: "🎓", name: "教科マスター",       desc: "ひとつの教科で、正解100問",    goal: 100,  unit: "問", get: () => Math.max(0, ...Object.values(state.stats.genres).map((p) => p[1])) },
+  { id: "gen5",   icon: "🌈", name: "オールラウンダー",    desc: "5つの教科に挑戦する",         goal: 5,    unit: "教科", get: () => Object.values(state.stats.genres).filter((p) => p[0] > 0).length },
+  { id: "rec300", icon: "📝", name: "記録300問",         desc: "記録した問題が300問",         goal: 300,  unit: "問", get: () => state.studied.length },
+  { id: "rec1k",  icon: "📖", name: "記録1000問",        desc: "記録した問題が1000問",        goal: 1000, unit: "問", get: () => state.studied.length }
+];
+function badgeCount() { return BADGES.filter((b) => state.badges[b.id]).length; }
+function checkBadges() {          // 保存するたびに、新しく条件を満たしたバッジがないか調べる
+  if (!state.badges) state.badges = {};
+  const got = [];
+  BADGES.forEach((b) => {
+    if (!state.badges[b.id] && b.get() >= b.goal) { state.badges[b.id] = todayStr(); got.push(b); }
+  });
+  if (got.length === 0) return;
+  setTimeout(() => {
+    toast(got.length === 1 ? `🏅 バッジ獲得！ ${got[0].icon} ${got[0].name}` : `🏅 バッジを${got.length}個 獲得！ メニューで見てみよう`);
+    if (got.length === 1) confetti(30);
+  }, 1300);
+}
+
 // ---------- 毎日の目標とストリーク ----------
 // 1日に DAILY_GOAL 問（勉強でもボス戦でも、答えた問題の数）を解くと、その日が「達成」になり、連続日数（ストリーク）が1日増える。
 function ensureToday() {          // 日付をまたいだら、今日の分を0に戻す（0時で切り替わる）
@@ -246,6 +340,7 @@ function questOnBossDefeated() {  // ボスを倒したら呼ぶ。クエスト�
   if (state.questBosses < QUEST_BOSSES || state.questClearedWeek === state.questWeek) return "";
   state.questClearedWeek = state.questWeek;
   state.questWeeksDone = (state.questWeeksDone || 0) + 1;
+  state.stats.questWeeks++;
   const n = state.questWeeksDone;
   const reward = QUEST_REWARDS[n] || 0;
   state.tickets = (state.tickets || 0) + reward;
@@ -281,6 +376,7 @@ function useRestToday() {         // 今日を、おやすみにする（券1枚
   if (!confirm("おやすみ券を1枚使って、今日をおやすみにします。\n連続記録（🔥）は守られます。よろしいですか？")) return false;
   state.tickets -= 1;
   addRestDay(t);
+  state.stats.restUsed++;
   state.questSeq = (state.questSeq || 0) + 1;
   save();
   updateHud();
@@ -303,6 +399,7 @@ function useRescue() {            // 休んだ日を、さかのぼっておや�
   if (!confirm(`おやすみ券を${info.n}枚使って、${info.from}〜${info.to}の${info.n}日分を、おやすみにします。\n連続記録（🔥${state.streak}日）が、つながります。よろしいですか？`)) return false;
   for (let i = 0; i < info.n; i++) addRestDay(addDays(info.from, i));
   state.tickets -= info.n;
+  state.stats.restUsed += info.n;
   state.questSeq = (state.questSeq || 0) + 1;
   save();
   updateHud();
@@ -505,6 +602,7 @@ function onAnswer(ctx) {
   const ok = revealAnswer(ctx);
   countAnswer();                          // 今日の目標に数える
   if (!ok) noteMistake(q, answerSeconds(card), result);   // 間違えた問題として記録する
+  recordStats(q, ok);                     // 統計に数える
   recordStudied(q);                       // 答えた問題を、記録する
   state.sinceOffer = (state.sinceOffer || 0) + 1;   // 前回の誘いから、何問答えたか
   addHistory(q);                          // 「今日勉強した問題」としても記録する
@@ -622,6 +720,7 @@ function onTestAnswer(ctx) {
   const ok = revealAnswer(ctx);
   countAnswer();                          // ボス戦の問題も、今日の目標に数える
   if (!ok) noteMistake(ctx.q, answerSeconds(card), result);   // 間違えた問題として記録する
+  recordStats(ctx.q, ok);                 // 統計に数える
   if (!ok) {
     combo = 0;
     beep([220, 180], 0.15);
@@ -776,6 +875,7 @@ function onReviewAnswer(ctx) {
   const sec = answerSeconds(card);
   const ok = revealAnswer(ctx);
   countAnswer();                          // 復習の問題も、今日の目標に数える
+  recordStats(q, ok);                     // 統計に数える
   const id = qid(q);
   review.queue.shift();                   // 先頭が、いま答えた問題
   let note;
@@ -783,6 +883,7 @@ function onReviewAnswer(ctx) {
     state.mistakes = state.mistakes.filter((m) => m.id !== id);   // 正解したら、記録からはずす
     state.mistakesSeq = (state.mistakesSeq || 0) + 1;
     review.cleared++;
+    state.stats.cleared++;
     combo++;
     state.bestCombo = Math.max(state.bestCombo, combo);
     gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
@@ -872,7 +973,7 @@ function updateModeButton() {
 const menu = document.createElement("div");
 menu.style.cssText = [
   "position:fixed", "inset:0", "z-index:40", "display:none", "flex-direction:column",
-  "align-items:center", "justify-content:center", "padding:24px", "overflow:auto", "color:#fff",
+  "padding:24px", "overflow:auto", "color:#fff",
   "background:radial-gradient(circle at 50% 25%, #2a1b5c, #120a2a 70%)"
 ].join(";");
 document.body.appendChild(menu);
@@ -956,12 +1057,164 @@ function buildTicketBox() {
   return wrap;
 }
 
+// 小さな箱（バッジ・統計の画面で使う）
+function panelBox() {
+  const b = el("div");
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;";
+  return b;
+}
+function panelTitle(text) {
+  const t = el("div", "", text);
+  t.style.cssText = "font-weight:800;font-size:15px;margin-bottom:10px;";
+  return t;
+}
+
+function renderBadgesView(box) {
+  const head = el("div", "explain", `獲得 ${badgeCount()} / ${BADGES.length}`);
+  head.style.cssText = "text-align:center;font-weight:800;font-size:16px;";
+  box.appendChild(head);
+  const grid = el("div");
+  grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:10px;";
+  BADGES.forEach((b) => {
+    const got = state.badges[b.id];
+    const cur = Math.min(b.get(), b.goal);
+    const card = el("div");
+    card.style.cssText = "border-radius:14px;padding:12px 10px;text-align:center;border:1px solid " + (got ? "rgba(255,207,63,.7);background:rgba(255,207,63,.14);" : "rgba(255,255,255,.15);background:rgba(255,255,255,.05);opacity:.6;");
+    const ic = el("div", "", b.icon);
+    ic.style.cssText = "font-size:32px;line-height:1.2;" + (got ? "" : "filter:grayscale(1);");
+    const nm = el("div", "", b.name);
+    nm.style.cssText = "font-weight:800;font-size:13px;margin-top:2px;";
+    const ds = el("div", "", b.desc);
+    ds.style.cssText = "font-size:11px;opacity:.8;margin-top:2px;min-height:2.6em;";
+    card.appendChild(ic); card.appendChild(nm); card.appendChild(ds);
+    const ft = el("div", "", got ? (got === todayStr() ? "NEW ✨ " : "") + got : `${cur}/${b.goal}${b.unit}`);
+    ft.style.cssText = "font-size:11px;margin-top:4px;" + (got ? "color:#ffcf3f;font-weight:700;" : "opacity:.8;");
+    card.appendChild(ft);
+    if (!got) {
+      const tr = el("div");
+      tr.style.cssText = "height:5px;border-radius:3px;background:rgba(255,255,255,.18);margin-top:4px;overflow:hidden;";
+      const fl = el("div");
+      fl.style.cssText = `height:100%;width:${(cur / b.goal) * 100}%;background:#6ea8ff;`;
+      tr.appendChild(fl);
+      card.appendChild(tr);
+    }
+    grid.appendChild(card);
+  });
+  box.appendChild(grid);
+  box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+}
+
+function renderStatsView(box) {
+  const st = state.stats;
+  // 全体
+  const total = panelBox();
+  const big = el("div", "", `正解率 ${pct(st.correct, st.answered)}％`);
+  big.style.cssText = "font-size:28px;font-weight:800;text-align:center;";
+  const sub = el("div", "", `${st.correct}問正解　／　${st.answered}問に挑戦`);
+  sub.style.cssText = "font-size:13px;opacity:.8;text-align:center;margin-top:2px;";
+  total.appendChild(big); total.appendChild(sub);
+  box.appendChild(total);
+
+  // 最近7日間
+  const chart = panelBox();
+  chart.appendChild(panelTitle("📈 最近7日間（答えた問題数）"));
+  const days = [];
+  for (let i = 6; i >= 0; i--) days.push(addDays(todayStr(), -i));
+  const maxA = Math.max(1, ...days.map((d) => (st.days[d] || [0, 0])[0]));
+  const row = el("div");
+  row.style.cssText = "display:flex;gap:6px;align-items:flex-end;";
+  days.forEach((d) => {
+    const a = (st.days[d] || [0, 0])[0];
+    const col = el("div");
+    col.style.cssText = "flex:1;display:flex;flex-direction:column;align-items:center;";
+    const num = el("div", "", String(a));
+    num.style.cssText = "font-size:11px;opacity:.85;";
+    const barWrap = el("div");
+    barWrap.style.cssText = "height:70px;display:flex;align-items:flex-end;width:100%;";
+    const bar = el("div");
+    bar.style.cssText = `width:100%;border-radius:4px 4px 0 0;height:${a > 0 ? Math.max(3, Math.round((a / maxA) * 70)) : 2}px;background:${a >= DAILY_GOAL ? "#ffcf3f" : "#6ea8ff"};opacity:${a > 0 ? 1 : .3};`;
+    barWrap.appendChild(bar);
+    const wd = el("div", "", "日月火水木金土"[new Date(d + "T12:00:00").getDay()]);
+    wd.style.cssText = "font-size:11px;margin-top:3px;" + (d === todayStr() ? "font-weight:800;color:#ffcf3f;" : "opacity:.75;");
+    col.appendChild(num); col.appendChild(barWrap); col.appendChild(wd);
+    row.appendChild(col);
+  });
+  chart.appendChild(row);
+  const legend = el("div", "", `黄色は、毎日の目標（${DAILY_GOAL}問）を超えた日`);
+  legend.style.cssText = "font-size:11px;opacity:.65;margin-top:6px;";
+  chart.appendChild(legend);
+  box.appendChild(chart);
+
+  // 教科ごとの正解率
+  const gbox = panelBox();
+  gbox.appendChild(panelTitle("📚 教科ごとの正解率"));
+  const rows = Object.entries(st.genres).filter(([, p]) => p[0] > 0).sort((a, b) => b[1][0] - a[1][0]);
+  if (rows.length === 0) {
+    const none = el("div", "", "まだ記録がありません。問題に答えると、ここに出ます。");
+    none.style.cssText = "font-size:13px;opacity:.75;";
+    gbox.appendChild(none);
+  }
+  rows.forEach(([name, p]) => {
+    const r = pct(p[1], p[0]);
+    const line = el("div");
+    line.style.cssText = "margin-top:8px;";
+    const top = el("div");
+    top.style.cssText = "display:flex;justify-content:space-between;font-size:13px;";
+    top.appendChild(el("span", "", name));
+    top.appendChild(el("span", "", `${r}％（${p[1]}/${p[0]}問）`));
+    const tr = el("div");
+    tr.style.cssText = "height:8px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:3px;";
+    const fl = el("div");
+    fl.style.cssText = `height:100%;width:${r}%;background:${r >= 80 ? "#3ddc84" : r >= 60 ? "#ffcf3f" : "#ff5470"};`;
+    tr.appendChild(fl);
+    line.appendChild(top); line.appendChild(tr);
+    gbox.appendChild(line);
+  });
+  const enough = rows.filter(([, p]) => p[0] >= 20);   // 20問以上答えた教科だけで、得意・苦手を決める
+  if (enough.length >= 2) {
+    const sorted = enough.slice().sort((a, b) => pct(b[1][1], b[1][0]) - pct(a[1][1], a[1][0]));
+    const hi = sorted[0], lo = sorted[sorted.length - 1];
+    const tip = el("div", "", `得意：${hi[0]}（${pct(hi[1][1], hi[1][0])}％）　苦手：${lo[0]}（${pct(lo[1][1], lo[1][0])}％）`);
+    tip.style.cssText = "font-size:12px;margin-top:10px;opacity:.85;";
+    gbox.appendChild(tip);
+  }
+  box.appendChild(gbox);
+
+  // きろく
+  const rec = panelBox();
+  rec.appendChild(panelTitle("🗂 きろく"));
+  [
+    ["🔥 最高の連続日数", `${state.bestStreak || 0}日`],
+    ["💥 最高コンボ", `${state.bestCombo || 0}`],
+    ["⚔ ボスを倒した数", `${state.totalDefeated || 0}体`],
+    ["📝 記録した問題", `${state.studied.length}問`],
+    ["✨ 復習で克服した問題", `${st.cleared}問`],
+    ["💪 1日の最高", `${st.bestDay}問`],
+    ["📅 週間クエスト達成", `${st.questWeeks}週`],
+    ["😴 おやすみ券を使った日", `${st.restUsed}日`],
+    ["🏅 バッジ", `${badgeCount()}/${BADGES.length}`]
+  ].forEach(([k, v]) => {
+    const r = el("div");
+    r.style.cssText = "display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-top:1px solid rgba(255,255,255,.1);";
+    r.appendChild(el("span", "", k));
+    const vv = el("span", "", v);
+    vv.style.fontWeight = "700";
+    r.appendChild(vv);
+    rec.appendChild(r);
+  });
+  box.appendChild(rec);
+  const note = el("div", "", "※ 答えた問題数・正解率の記録は、統計ができてからのものです");
+  note.style.cssText = "font-size:11px;opacity:.6;text-align:center;";
+  box.appendChild(note);
+  box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+}
+
 function renderMenu(view) {
   ensureToday();
   menu.textContent = "";
   const box = el("div");
-  box.style.cssText = "width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;";
-  const title = el("div", "q-text", view === "genres" ? "教科をえらぶ" : "📚 SwipeStudy");
+  box.style.cssText = "width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;margin:auto;";
+  const title = el("div", "q-text", { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計" }[view] || "📚 SwipeStudy");
   title.style.textAlign = "center";
   box.appendChild(title);
 
@@ -972,6 +1225,10 @@ function renderMenu(view) {
       box.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
     });
     box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+  } else if (view === "badges") {
+    renderBadgesView(box);
+  } else if (view === "stats") {
+    renderStatsView(box);
   } else {
     // ストリークと、今日の目標
     const cs = currentStreak();
@@ -1026,6 +1283,8 @@ function renderMenu(view) {
     box.appendChild(menuBtn("🔁 間違えた問題の復習",
       mc ? `いま ${mc}問（最大${MISTAKE_MAX}問）。時間がかかった問題・何度も間違えた問題から出ます` : "間違えた問題は、まだありません",
       () => { closeMenu(); startReview(); }, mc === 0));
+    box.appendChild(menuBtn("🏅 バッジ", `獲得 ${badgeCount()} / ${BADGES.length}`, () => renderMenu("badges")));
+    box.appendChild(menuBtn("📊 学習の統計", `正解率 ${pct(state.stats.correct, state.stats.answered)}％　${state.stats.answered}問に挑戦`, () => renderMenu("stats")));
     box.appendChild(menuBtn("🏆 ランキング", "レベル・ボス討伐数", () => {
       if (typeof window.openRanking === "function") window.openRanking();
       else alert("ランキングを使うには、ログイン機能（cloud.js）が必要です。");
@@ -1137,6 +1396,8 @@ window.gameApi = {
       .filter((m) => m && BY_ID.has(m.id)).slice(0, MISTAKE_MAX)
       .map((m) => ({ id: m.id, t: m.t || 0, n: m.n || 1, d: m.d || "" }));
     state.mistakesSeq = s.mistakesSeq || 0;
+    state.stats = normalizeStats(s.stats);
+    state.badges = normalizeBadges(s.badges);
     ensureWeek();
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
     rebuildFeed();
