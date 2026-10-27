@@ -32,6 +32,10 @@ const REVIEW_REQUEUE = 5;          // 復習でまた間違えたら、何問あ
 
 const STATS_DAYS = 30;             // 日ごとの「答えた問題数」を、何日分残すか（統計のグラフ用）
 
+// 背景の画像
+const BG_IMAGE = "asset/haikei.PNG";   // 背景にする画像の場所（assetフォルダの中。大文字・小文字も同じにする）。使わないときは "" にする
+const BG_DIM = 0.4;                    // 画像の上にかぶせる、暗い膜の濃さ（0〜1）。文字が読みにくいときは、大きくする
+
 const MONSTERS = [
   { emoji: "👾", name: "スライム語" },
   { emoji: "🐲", name: "ドラゴン文法" },
@@ -352,11 +356,12 @@ function questOnBossDefeated() {  // ボスを倒したら呼ぶ。クエスト�
   }
   return msg;
 }
-function nextRewardText() {       // 次に、おやすみ券がもらえる週
+function nextRewardText(short) {       // 次に、おやすみ券がもらえる週
   const keys = Object.keys(QUEST_REWARDS).map(Number).sort((a, b) => a - b);
   const k = keys.find((x) => x > (state.questWeeksDone || 0));
   if (!k) return "";
-  return `次のごほうび：${k}週達成で 🎫×${QUEST_REWARDS[k]}（あと${k - (state.questWeeksDone || 0)}週）`;
+  const left = k - (state.questWeeksDone || 0);
+  return short ? `次：${k}週目で 🎫×${QUEST_REWARDS[k]}（あと${left}週）` : `次のごほうび：${k}週達成で 🎫×${QUEST_REWARDS[k]}（あと${left}週）`;
 }
 
 // ---------- おやすみ券 ----------
@@ -973,23 +978,53 @@ function updateModeButton() {
 const menu = document.createElement("div");
 menu.style.cssText = [
   "position:fixed", "inset:0", "z-index:40", "display:none", "flex-direction:column",
-  "padding:24px", "overflow:auto", "color:#fff",
-  "background:radial-gradient(circle at 50% 25%, #2a1b5c, #120a2a 70%)"
+  "padding:12px 16px 16px", "padding-top:calc(env(safe-area-inset-top) + 12px)", "overflow:auto", "color:#fff",
+  BG_IMAGE
+    ? `background:linear-gradient(rgba(14,7,32,${Math.min(0.9, BG_DIM + 0.2)}), rgba(14,7,32,${Math.min(0.9, BG_DIM + 0.2)})), url("${BG_IMAGE}") center / cover no-repeat, #120a2a`
+    : "background:radial-gradient(circle at 50% 25%, #2a1b5c, #120a2a 70%)"
 ].join(";");
 document.body.appendChild(menu);
+// 問題の画面の背景：画像は動かさず、問題のカードだけがスワイプで動く
+if (BG_IMAGE) {
+  const bgStyle = document.createElement("style");
+  bgStyle.textContent = `
+body { background: transparent; }
+body::before { content: ""; position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(rgba(14,7,32,${BG_DIM}), rgba(14,7,32,${BG_DIM})), url("${BG_IMAGE}") center / cover no-repeat, var(--bg); }
+.card { background: transparent; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+.choice { background: rgba(18,10,40,.6); }
+.choice.correct { background: rgba(30,120,70,.8); }
+.choice.wrong { background: rgba(160,30,60,.8); }`;
+  (document.head || document.body).appendChild(bgStyle);
+}
+const menuStyle = document.createElement("style");
+menuStyle.textContent = `
+.mn-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mn-cols > * { min-width: 0; }
+.mn-col { display: flex; flex-direction: column; gap: 10px; }
+.mn-btn { padding: 10px 12px !important; }
+.mn-label { font-size: 15px; line-height: 1.25; }
+.mn-sub { font-size: 11px; font-weight: 400; opacity: .75; margin-top: 2px; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mn-title { font-size: 22px; font-weight: 800; text-align: center; }
+@media (max-height: 560px) {
+  .mn-sub, .mn-title, .mn-info, .mn-best { display: none; }
+  .mn-btn { padding: 7px 12px !important; }
+  .mn-col, .mn-cols { gap: 8px; }
+}`;
+(document.head || document.body).appendChild(menuStyle);
 
 function menuBtn(label, sub, onClick, disabled) {
-  const b = el("button", "btn");
+  const b = el("button", "btn mn-btn");
   b.type = "button";
-  b.style.cssText = "display:block;width:100%;text-align:left;padding:14px 16px;";
-  b.appendChild(el("div", "", label));
-  if (sub) {
-    const d = el("div", "", sub);
-    d.style.cssText = "font-size:12px;font-weight:400;opacity:.75;margin-top:3px;";
-    b.appendChild(d);
-  }
-  if (disabled) { b.disabled = true; b.style.opacity = "0.45"; }
-  else b.addEventListener("click", onClick);
+  b.style.cssText = "display:block;width:100%;text-align:left;";
+  b.appendChild(el("div", "mn-label", label));
+  if (sub) b.appendChild(el("div", "mn-sub", sub));
+  if (disabled) {                    // 押せないボタンは、背景の画像の上でも読めるように、暗い色にする
+    b.disabled = true;
+    b.style.background = "rgba(255,255,255,.16)";
+    b.style.color = "#d9d0f5";
+  } else b.addEventListener("click", onClick);
   return b;
 }
 function recordedCount(g) {
@@ -1006,24 +1041,61 @@ function buildQuestBox() {
   const n = Math.min(state.questBosses || 0, QUEST_BOSSES);
   const daysLeft = 7 - ((new Date().getDay() + 6) % 7);       // 日曜日まで（今日をふくむ）
   const b = el("div");
-  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;";
-  const t = el("div", "", `📅 今週のクエスト：ボスを${QUEST_BOSSES}体倒す`);
-  t.style.cssText = "font-weight:800;font-size:16px;";
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;justify-content:center;text-align:center;";
+  const t = el("div", "", "📅 今週のクエスト");
+  t.style.cssText = "font-weight:800;font-size:15px;";
+  const t2 = el("div", "", `ボスを${QUEST_BOSSES}体倒す　${n}/${QUEST_BOSSES}`);
+  t2.style.cssText = "font-size:12px;opacity:.9;margin-top:2px;";
   const track = el("div");
-  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:10px 0 8px;";
+  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:8px 0;";
   const fill = el("div");
   fill.style.cssText = `height:100%;width:${(n / QUEST_BOSSES) * 100}%;background:linear-gradient(90deg,#6ea8ff,#b78bff);`;
   track.appendChild(fill);
-  const l1 = el("div", "", `${n}/${QUEST_BOSSES}体　${done ? "✔ 今週は達成！" : `あと${QUEST_BOSSES - n}体（日曜日まで あと${daysLeft}日）`}`);
-  l1.style.cssText = "font-size:13px;";
-  const l2 = el("div", "", `達成した週：${state.questWeeksDone || 0}/${QUEST_CYCLE}週　${nextRewardText()}`);
-  l2.style.cssText = "font-size:12px;opacity:.8;margin-top:4px;";
-  b.appendChild(t); b.appendChild(track); b.appendChild(l1); b.appendChild(l2);
+  const l1 = el("div", "", done ? "✔ 今週は達成！" : `あと${QUEST_BOSSES - n}体（日曜まで${daysLeft}日）`);
+  l1.style.cssText = "font-size:12px;";
+  const l2 = el("div", "", `達成した週 ${state.questWeeksDone || 0}/${QUEST_CYCLE}　${nextRewardText(true)}`);
+  l2.style.cssText = "font-size:11px;opacity:.75;margin-top:4px;";
+  b.appendChild(t); b.appendChild(t2); b.appendChild(track); b.appendChild(l1); b.appendChild(l2);
   if (QUEST_CONSECUTIVE) {
-    const l3 = el("div", "", "※1週でも達成できないと、0週目からやりなおしです");
-    l3.style.cssText = "font-size:11px;opacity:.65;margin-top:4px;";
+    const l3 = el("div", "", "※1週でも逃すと、0週目から");
+    l3.style.cssText = "font-size:10px;opacity:.6;margin-top:2px;";
     b.appendChild(l3);
   }
+  return b;
+}
+
+// 連続記録の箱。タップすると、おやすみ券の画面が開く
+function buildStreakBox() {
+  const cs = currentStreak();
+  const gdone = state.lastGoalDate === todayStr();
+  const gn = state.answeredDate === todayStr() ? Math.min(state.answeredToday || 0, DAILY_GOAL) : 0;
+  const resting = state.restDates.includes(todayStr());
+  const b = el("div");
+  b.setAttribute("role", "button");
+  b.tabIndex = 0;
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,207,63,.5);border-radius:14px;padding:12px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;justify-content:center;";
+  const big = el("div", "", `🔥 ${cs}日連続`);
+  big.style.cssText = "font-size:24px;font-weight:800;line-height:1.2;";
+  const best = el("div", "mn-best", `最高 ${state.bestStreak || 0}日`);
+  best.style.cssText = "font-size:11px;opacity:.7;";
+  const track = el("div");
+  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:8px 0;";
+  const fill = el("div");
+  fill.style.cssText = `height:100%;width:${(gdone ? 100 : (gn / DAILY_GOAL) * 100)}%;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);`;
+  track.appendChild(fill);
+  let note;
+  if (gdone) note = "✔ 今日の目標を達成！";
+  else if (resting) note = "😴 今日はおやすみ中";
+  else if (cs > 0) note = `あと${DAILY_GOAL - gn}問で ${cs + 1}日連続`;
+  else note = `あと${DAILY_GOAL - gn}問で、連続スタート`;
+  const noteEl = el("div", "", note);
+  noteEl.style.cssText = "font-size:12px;";
+  const foot = el("div", "", `🎫 おやすみ券 ${state.tickets || 0}枚　▶`);
+  foot.style.cssText = "font-size:12px;font-weight:700;color:#ffcf3f;margin-top:6px;";
+  b.appendChild(big); b.appendChild(best); b.appendChild(track); b.appendChild(noteEl); b.appendChild(foot);
+  const open = () => renderMenu("rest");
+  b.addEventListener("click", open);
+  b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") open(); });
   return b;
 }
 
@@ -1045,14 +1117,14 @@ function buildTicketBox() {
   else if (state.lastGoalDate === t) why = "今日は、もう目標を達成しています";
   else if (state.restDates.includes(t)) why = "今日は、もうおやすみにしています";
   wrap.appendChild(menuBtn("😴 今日をおやすみにする", why || "券を1枚使います。今日は勉強しなくても、連続記録が続きます",
-    () => { if (useRestToday()) renderMenu("main"); }, !!why));
+    () => { if (useRestToday()) renderMenu("rest"); }, !!why));
 
   const info = rescueInfo();
   if (info) {
     const lack = info.n - tk;
     wrap.appendChild(menuBtn(`⏪ 休んだ${info.n}日分を取り戻す`,
       lack > 0 ? `あと${lack}枚、券が必要です（連続記録 🔥${state.streak}日）` : `券を${info.n}枚使って、連続記録（🔥${state.streak}日）を守ります`,
-      () => { if (useRescue()) renderMenu("main"); }, lack > 0));
+      () => { if (useRescue()) renderMenu("rest"); }, lack > 0));
   }
   return wrap;
 }
@@ -1063,59 +1135,92 @@ function panelBox() {
   b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;";
   return b;
 }
+function wideScreen() { return (window.innerWidth || 0) >= 680; }
 function panelTitle(text) {
   const t = el("div", "", text);
   t.style.cssText = "font-weight:800;font-size:15px;margin-bottom:10px;";
   return t;
 }
 
+// 戻るボタンつきの見出し（メニューの中の画面で使う）
+function subHeader(title) {
+  const row = el("div");
+  row.style.cssText = "display:flex;align-items:center;gap:10px;";
+  const back = el("button", "", "← もどる");
+  back.type = "button";
+  back.style.cssText = "font:inherit;font-size:13px;font-weight:700;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 12px;cursor:pointer;white-space:nowrap;";
+  back.addEventListener("click", () => renderMenu("main"));
+  const t = el("div", "", title);
+  t.style.cssText = "flex:1;text-align:center;font-weight:800;font-size:18px;padding-right:76px;";   // 戻るボタンの分だけ、中央に寄せる
+  row.appendChild(back); row.appendChild(t);
+  return row;
+}
+
+// ---------- バッジの画面（小さなタイルを並べて、タップでくわしく見る）----------
 function renderBadgesView(box) {
-  const head = el("div", "explain", `獲得 ${badgeCount()} / ${BADGES.length}`);
-  head.style.cssText = "text-align:center;font-weight:800;font-size:16px;";
+  const before = badgeCount();
+  checkBadges();
+  if (badgeCount() !== before) save();
+  const head = el("div", "", `獲得 ${badgeCount()} / ${BADGES.length}`);
+  head.style.cssText = "text-align:center;font-weight:800;font-size:15px;";
   box.appendChild(head);
+
+  const detail = panelBox();
+  detail.style.minHeight = "62px";
+  const showDetail = (b) => {
+    const got = state.badges[b.id];
+    const cur = Math.min(b.get(), b.goal);
+    detail.textContent = "";
+    const l1 = el("div", "", `${b.icon} ${b.name}`);
+    l1.style.cssText = "font-weight:800;font-size:15px;";
+    const l2 = el("div", "", b.desc);
+    l2.style.cssText = "font-size:12px;opacity:.85;margin-top:2px;";
+    const l3 = el("div", "", got ? `獲得した日：${got}${got === todayStr() ? "　NEW ✨" : ""}` : `進み具合：${cur}/${b.goal}${b.unit}`);
+    l3.style.cssText = "font-size:12px;margin-top:2px;" + (got ? "color:#ffcf3f;font-weight:700;" : "opacity:.8;");
+    detail.appendChild(l1); detail.appendChild(l2); detail.appendChild(l3);
+  };
+  const hint = el("div", "", "バッジをタップすると、くわしく見られます");
+  hint.style.cssText = "font-size:12px;opacity:.7;text-align:center;";
+  detail.appendChild(hint);
+  box.appendChild(detail);
+
   const grid = el("div");
-  grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:10px;";
+  grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:8px;";
   BADGES.forEach((b) => {
     const got = state.badges[b.id];
     const cur = Math.min(b.get(), b.goal);
-    const card = el("div");
-    card.style.cssText = "border-radius:14px;padding:12px 10px;text-align:center;border:1px solid " + (got ? "rgba(255,207,63,.7);background:rgba(255,207,63,.14);" : "rgba(255,255,255,.15);background:rgba(255,255,255,.05);opacity:.6;");
+    const tile = el("button");
+    tile.type = "button";
+    tile.style.cssText = "font:inherit;color:#fff;border-radius:12px;padding:8px 4px 6px;text-align:center;cursor:pointer;border:1px solid " +
+      (got ? "rgba(255,207,63,.8);background:rgba(255,207,63,.16);" : "rgba(255,255,255,.15);background:rgba(255,255,255,.05);");
     const ic = el("div", "", b.icon);
-    ic.style.cssText = "font-size:32px;line-height:1.2;" + (got ? "" : "filter:grayscale(1);");
-    const nm = el("div", "", b.name);
-    nm.style.cssText = "font-weight:800;font-size:13px;margin-top:2px;";
-    const ds = el("div", "", b.desc);
-    ds.style.cssText = "font-size:11px;opacity:.8;margin-top:2px;min-height:2.6em;";
-    card.appendChild(ic); card.appendChild(nm); card.appendChild(ds);
-    const ft = el("div", "", got ? (got === todayStr() ? "NEW ✨ " : "") + got : `${cur}/${b.goal}${b.unit}`);
-    ft.style.cssText = "font-size:11px;margin-top:4px;" + (got ? "color:#ffcf3f;font-weight:700;" : "opacity:.8;");
-    card.appendChild(ft);
-    if (!got) {
-      const tr = el("div");
-      tr.style.cssText = "height:5px;border-radius:3px;background:rgba(255,255,255,.18);margin-top:4px;overflow:hidden;";
-      const fl = el("div");
-      fl.style.cssText = `height:100%;width:${(cur / b.goal) * 100}%;background:#6ea8ff;`;
-      tr.appendChild(fl);
-      card.appendChild(tr);
-    }
-    grid.appendChild(card);
+    ic.style.cssText = "font-size:26px;line-height:1.1;" + (got ? "" : "filter:grayscale(1);opacity:.55;");
+    tile.appendChild(ic);
+    const tr = el("div");
+    tr.style.cssText = "height:4px;border-radius:2px;background:rgba(255,255,255,.18);margin:5px 4px 0;overflow:hidden;";
+    const fl = el("div");
+    fl.style.cssText = `height:100%;width:${got ? 100 : (cur / b.goal) * 100}%;background:${got ? "#ffcf3f" : "#6ea8ff"};`;
+    tr.appendChild(fl);
+    tile.appendChild(tr);
+    tile.addEventListener("click", () => showDetail(b));
+    grid.appendChild(tile);
   });
   box.appendChild(grid);
-  box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
 }
 
-function renderStatsView(box) {
+// ---------- 統計の画面（広い画面では2列、せまい画面では、タブで切りかえ）----------
+function buildStatsTotal() {
   const st = state.stats;
-  // 全体
   const total = panelBox();
   const big = el("div", "", `正解率 ${pct(st.correct, st.answered)}％`);
-  big.style.cssText = "font-size:28px;font-weight:800;text-align:center;";
+  big.style.cssText = "font-size:26px;font-weight:800;text-align:center;";
   const sub = el("div", "", `${st.correct}問正解　／　${st.answered}問に挑戦`);
   sub.style.cssText = "font-size:13px;opacity:.8;text-align:center;margin-top:2px;";
   total.appendChild(big); total.appendChild(sub);
-  box.appendChild(total);
-
-  // 最近7日間
+  return total;
+}
+function buildStatsChart() {
+  const st = state.stats;
   const chart = panelBox();
   chart.appendChild(panelTitle("📈 最近7日間（答えた問題数）"));
   const days = [];
@@ -1143,9 +1248,10 @@ function renderStatsView(box) {
   const legend = el("div", "", `黄色は、毎日の目標（${DAILY_GOAL}問）を超えた日`);
   legend.style.cssText = "font-size:11px;opacity:.65;margin-top:6px;";
   chart.appendChild(legend);
-  box.appendChild(chart);
-
-  // 教科ごとの正解率
+  return chart;
+}
+function buildStatsGenres() {
+  const st = state.stats;
   const gbox = panelBox();
   gbox.appendChild(panelTitle("📚 教科ごとの正解率"));
   const rows = Object.entries(st.genres).filter(([, p]) => p[0] > 0).sort((a, b) => b[1][0] - a[1][0]);
@@ -1154,10 +1260,13 @@ function renderStatsView(box) {
     none.style.cssText = "font-size:13px;opacity:.75;";
     gbox.appendChild(none);
   }
+  const list = el("div");
+  if (wideScreen()) list.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:0 16px;";
+  gbox.appendChild(list);
   rows.forEach(([name, p]) => {
     const r = pct(p[1], p[0]);
     const line = el("div");
-    line.style.cssText = "margin-top:8px;";
+    line.style.cssText = `margin-top:${(window.innerHeight || 999) < 560 ? 3 : 7}px;`;     // 画面が低いときは、すきまをつめる
     const top = el("div");
     top.style.cssText = "display:flex;justify-content:space-between;font-size:13px;";
     top.appendChild(el("span", "", name));
@@ -1168,7 +1277,7 @@ function renderStatsView(box) {
     fl.style.cssText = `height:100%;width:${r}%;background:${r >= 80 ? "#3ddc84" : r >= 60 ? "#ffcf3f" : "#ff5470"};`;
     tr.appendChild(fl);
     line.appendChild(top); line.appendChild(tr);
-    gbox.appendChild(line);
+    list.appendChild(line);
   });
   const enough = rows.filter(([, p]) => p[0] >= 20);   // 20問以上答えた教科だけで、得意・苦手を決める
   if (enough.length >= 2) {
@@ -1178,11 +1287,15 @@ function renderStatsView(box) {
     tip.style.cssText = "font-size:12px;margin-top:10px;opacity:.85;";
     gbox.appendChild(tip);
   }
-  box.appendChild(gbox);
-
-  // きろく
+  return gbox;
+}
+function buildStatsRecords() {
+  const st = state.stats;
   const rec = panelBox();
   rec.appendChild(panelTitle("🗂 きろく"));
+  const list = el("div");
+  if (wideScreen()) list.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:0 16px;";
+  rec.appendChild(list);
   [
     ["🔥 最高の連続日数", `${state.bestStreak || 0}日`],
     ["💥 最高コンボ", `${state.bestCombo || 0}`],
@@ -1200,95 +1313,139 @@ function renderStatsView(box) {
     const vv = el("span", "", v);
     vv.style.fontWeight = "700";
     r.appendChild(vv);
-    rec.appendChild(r);
+    list.appendChild(r);
   });
-  box.appendChild(rec);
+  return rec;
+}
+function renderStatsView(box) {
   const note = el("div", "", "※ 答えた問題数・正解率の記録は、統計ができてからのものです");
   note.style.cssText = "font-size:11px;opacity:.6;text-align:center;";
+  if (wideScreen() && (window.innerHeight || 0) >= 640) {   // 広くて高い画面：左右に2列
+    const cols = el("div", "mn-cols");
+    const left = el("div", "mn-col"), right = el("div", "mn-col");
+    left.appendChild(buildStatsTotal()); left.appendChild(buildStatsChart());
+    right.appendChild(buildStatsGenres()); right.appendChild(buildStatsRecords());
+    cols.appendChild(left); cols.appendChild(right);
+    box.appendChild(cols);
+  } else {                                        // せまい画面：タブで切りかえ（スクロールしなくてよいように）
+    const tabs = [
+      ["📈 ぜんたい", () => [buildStatsTotal(), buildStatsChart()]],
+      ["📚 教科", () => [buildStatsGenres()]],
+      ["🗂 きろく", () => [buildStatsRecords()]]
+    ];
+    const bar = el("div");
+    bar.style.cssText = "display:flex;gap:6px;";
+    const body = el("div");
+    body.style.cssText = "display:flex;flex-direction:column;gap:10px;";
+    const btns = [];
+    const show = (i) => {
+      body.textContent = "";
+      const items = tabs[i][1]();
+      if (wideScreen() && items.length > 1) {      // 広い画面では、横にならべる
+        const g = el("div", "mn-cols");
+        items.forEach((p) => g.appendChild(p));
+        body.appendChild(g);
+      } else items.forEach((p) => body.appendChild(p));
+      btns.forEach((b, k) => {
+        b.style.background = k === i ? "#ffcf3f" : "rgba(255,255,255,.12)";
+        b.style.color = k === i ? "#1a1033" : "#fff";
+      });
+    };
+    tabs.forEach(([label], i) => {
+      const b = el("button", "", label);
+      b.type = "button";
+      b.style.cssText = "flex:1;font:inherit;font-size:13px;font-weight:800;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:8px 4px;cursor:pointer;";
+      b.addEventListener("click", () => show(i));
+      btns.push(b);
+      bar.appendChild(b);
+    });
+    box.appendChild(bar);
+    box.appendChild(body);
+    show(0);
+  }
   box.appendChild(note);
-  box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+}
+
+// ---------- おやすみ券の画面 ----------
+function renderRestView(box) {
+  const cs = currentStreak();
+  const head = el("div", "", `🔥 いまの連続記録：${cs}日　（最高 ${state.bestStreak || 0}日）`);
+  head.style.cssText = "text-align:center;font-weight:700;font-size:14px;";
+  box.appendChild(head);
+  box.appendChild(buildTicketBox());
+  const how = el("div", "", `🎫 おやすみ券は、週間クエスト（1週間にボスを${QUEST_BOSSES}体倒す）を達成して、ためていくともらえます`);
+  how.style.cssText = "font-size:12px;opacity:.7;text-align:center;";
+  box.appendChild(how);
 }
 
 function renderMenu(view) {
   ensureToday();
   menu.textContent = "";
+  view = view || "main";
+  const titles = { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計", rest: "🎫 おやすみ券" };
+  const maxW = { main: 760, genres: 560, badges: 760, stats: 760, rest: 440 }[view] || 760;
   const box = el("div");
-  box.style.cssText = "width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;margin:auto;";
-  const title = el("div", "q-text", { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計" }[view] || "📚 SwipeStudy");
-  title.style.textAlign = "center";
-  box.appendChild(title);
+  box.style.cssText = `width:100%;max-width:${maxW}px;display:flex;flex-direction:column;gap:10px;margin:auto;`;
+  if (view === "main") box.appendChild(el("div", "mn-title", "📚 SwipeStudy"));
+  else box.appendChild(subHeader(titles[view] || ""));
 
   if (view === "genres") {
+    const grid = el("div", "mn-cols");
     GENRES.forEach((g) => {
       const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
-      const cur = g === state.genre ? "　✔ いま選択中" : "";
-      box.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
+      const cur = g === state.genre ? "　✔" : "";
+      grid.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
     });
-    box.appendChild(menuBtn("← もどる", "", () => renderMenu("main")));
+    box.appendChild(grid);
   } else if (view === "badges") {
     renderBadgesView(box);
   } else if (view === "stats") {
     renderStatsView(box);
+  } else if (view === "rest") {
+    renderRestView(box);
   } else {
-    // ストリークと、今日の目標
-    const cs = currentStreak();
-    const gdone = state.lastGoalDate === todayStr();
-    const gn = state.answeredDate === todayStr() ? Math.min(state.answeredToday || 0, DAILY_GOAL) : 0;
-    const streakBox = el("div");
-    streakBox.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 16px;text-align:center;";
-    const big = el("div", "", `🔥 ${cs}日連続`);
-    big.style.cssText = "font-size:28px;font-weight:800;";
-    const best = el("div", "", `最高 ${state.bestStreak || 0}日`);
-    best.style.cssText = "font-size:12px;opacity:.7;margin-bottom:10px;";
-    const track = el("div");
-    track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;";
-    const fill = el("div");
-    fill.style.cssText = `height:100%;width:${(gdone ? 100 : (gn / DAILY_GOAL) * 100)}%;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);`;
-    track.appendChild(fill);
-    let note;
-    const resting = state.restDates.includes(todayStr());
-    if (gdone) note = "✔ 今日の目標を達成！ また明日も続けよう";
-    else if (resting) note = "😴 今日は、おやすみ券を使っています。連続記録は守られています";
-    else if (cs > 0) note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、${cs + 1}日連続になります`;
-    else note = `今日の目標：あと ${DAILY_GOAL - gn}問 で、ストリークが始まります`;
-    const noteEl = el("div", "", note);
-    noteEl.style.cssText = "font-size:13px;margin-top:8px;";
-    streakBox.appendChild(big); streakBox.appendChild(best); streakBox.appendChild(track); streakBox.appendChild(noteEl);
-    box.appendChild(streakBox);
-    box.appendChild(buildQuestBox());
-    box.appendChild(buildTicketBox());
+    // 上の段：連続記録（タップで、おやすみ券）と、今週のクエスト
+    const top = el("div", "mn-cols");
+    top.appendChild(buildStreakBox());
+    top.appendChild(buildQuestBox());
+    box.appendChild(top);
 
-    const info = el("div", "explain", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
-    info.style.textAlign = "center";
+    const info = el("div", "mn-info", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
+    info.style.cssText = "text-align:center;font-size:13px;opacity:.85;";
     box.appendChild(info);
 
+    // 下の段：左＝勉強とボス戦、右＝バッジ・統計・ランキング・復習
     const limit = state.bossesToday >= BOSSES_PER_DAY;
     const n = studiedPool().length;
     const y = yesterdayPool().length;
-    box.appendChild(menuBtn(`▶ つづきから勉強する`, `いまの教科：${state.genre}`, () => {
+    const yDone = state.yesterdayDone === todayStr();
+    const mc = sortedMistakes().length;
+    const cols = el("div", "mn-cols");
+    const left = el("div", "mn-col"), right = el("div", "mn-col");
+
+    left.appendChild(menuBtn("▶ つづきから", `いまの教科：${state.genre}`, () => {
       closeMenu();
       if (mode !== "study") rebuildFeed();
     }));
-    box.appendChild(menuBtn("📚 教科をえらんで勉強する", GENRES.filter((g) => g !== ALL).join("・"), () => renderMenu("genres")));
-    box.appendChild(menuBtn("⚔ ボス戦（記録した問題から）",
-      limit ? "今日のボス戦は終了しました" : (n < TEST_MIN ? `記録 ${n}問（${TEST_MIN}問以上で挑戦できます）` : `記録 ${n}問から、最大${TEST_SIZE}問を出題`),
+    left.appendChild(menuBtn("📚 教科をえらぶ", `${GENRES.length - 1}教科から選べます`, () => renderMenu("genres")));
+    left.appendChild(menuBtn("⚔ ボス戦",
+      limit ? "今日のボス戦は終了しました" : (n < TEST_MIN ? `記録 ${n}問（${TEST_MIN}問から）` : `記録 ${n}問から、最大${TEST_SIZE}問`),
       () => { closeMenu(); startTest(); }, limit || n < TEST_MIN));
-    const yDone = state.yesterdayDone === todayStr();
-    box.appendChild(menuBtn("📝 昨日の分のテスト",
-      yDone ? "今日はクリア済み（追加経験値をゲット ✔）"
-        : (y < YESTERDAY_MIN ? `昨日の記録 ${y}問（${YESTERDAY_MIN}問以上で挑戦できます）`
-          : `昨日勉強した ${y}問から、最大${TEST_SIZE}問。全問正解で追加経験値 +${YESTERDAY_BONUS_XP}`),
+    left.appendChild(menuBtn("📝 昨日のテスト",
+      yDone ? "今日はクリア済み ✔" : (y < YESTERDAY_MIN ? `昨日 ${y}問（${YESTERDAY_MIN}問から）` : `昨日の${y}問から。全問正解で +${YESTERDAY_BONUS_XP}XP`),
       () => { closeMenu(); startYesterdayTest(); }, yDone || y < YESTERDAY_MIN));
-    const mc = sortedMistakes().length;
-    box.appendChild(menuBtn("🔁 間違えた問題の復習",
-      mc ? `いま ${mc}問（最大${MISTAKE_MAX}問）。時間がかかった問題・何度も間違えた問題から出ます` : "間違えた問題は、まだありません",
-      () => { closeMenu(); startReview(); }, mc === 0));
-    box.appendChild(menuBtn("🏅 バッジ", `獲得 ${badgeCount()} / ${BADGES.length}`, () => renderMenu("badges")));
-    box.appendChild(menuBtn("📊 学習の統計", `正解率 ${pct(state.stats.correct, state.stats.answered)}％　${state.stats.answered}問に挑戦`, () => renderMenu("stats")));
-    box.appendChild(menuBtn("🏆 ランキング", "レベル・ボス討伐数", () => {
+
+    right.appendChild(menuBtn("🏅 バッジ", `獲得 ${badgeCount()} / ${BADGES.length}`, () => renderMenu("badges")));
+    right.appendChild(menuBtn("📊 統計", `正解率 ${pct(state.stats.correct, state.stats.answered)}％　${state.stats.answered}問に挑戦`, () => renderMenu("stats")));
+    right.appendChild(menuBtn("🏆 ランキング", "レベル・ボス・連続日数", () => {
       if (typeof window.openRanking === "function") window.openRanking();
       else alert("ランキングを使うには、ログイン機能（cloud.js）が必要です。");
     }));
+    right.appendChild(menuBtn("🔁 間違いの復習",
+      mc ? `いま ${mc}問（時間がかかった順）` : "間違えた問題は、まだなし",
+      () => { closeMenu(); startReview(); }, mc === 0));
+    cols.appendChild(left); cols.appendChild(right);
+    box.appendChild(cols);
   }
   menu.appendChild(box);
 }
