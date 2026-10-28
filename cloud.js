@@ -110,6 +110,7 @@ btn.style.cssText = [
   "background:rgba(20,20,30,.85)", "color:#fff", "font-size:13px", "cursor:pointer",
   "max-width:70vw", "overflow:hidden", "text-overflow:ellipsis", "white-space:nowrap"
 ].join(";");
+btn.classList.add("ui-float");              // 大きい画面で、すこし大きくするための目印
 document.body.appendChild(btn);
 function setStatus(text) { btn.textContent = text; }
 setStatus("☁ ログイン");
@@ -301,6 +302,7 @@ if (!configured) {
   overlay.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;";
   const panel = document.createElement("div");
   panel.style.cssText = "background:#1b1433;color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:16px;width:100%;max-width:480px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;";
+  panel.classList.add("ui-panel");
   const head = document.createElement("div");
   head.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;font-weight:700;font-size:17px;";
   head.appendChild(document.createTextNode("🏆 ランキング"));
