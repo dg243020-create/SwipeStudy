@@ -34,6 +34,7 @@ const STATS_DAYS = 30;             // 日ごとの「答えた問題数」を、
 
 // 背景の画像
 const BG_IMAGE = "asset/haikei.PNG";   // 背景にする画像の場所（assetフォルダの中。大文字・小文字も同じにする）。使わないときは "" にする
+const UI_SCALE_MAX = 1.8;              // iPad・パソコンで、画面全体を大きくするときの、いちばん大きい倍率（1にすると、大きくしない）
 const BG_DIM = 0.4;                    // 画像の上にかぶせる、暗い膜の濃さ（0〜1）。文字が読みにくいときは、大きくする
 
 const MONSTERS = [
@@ -942,11 +943,13 @@ const FLOAT_STYLE = [
 ].join(";");
 const modeBtn = document.createElement("button");
 modeBtn.type = "button";
+modeBtn.classList.add("ui-float");
 modeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(10px + env(safe-area-inset-bottom, 0px))";
 modeBtn.addEventListener("click", () => { if (mode !== "study") endTest(); else startTest(); });
 document.body.appendChild(modeBtn);
 const homeBtn = document.createElement("button");
 homeBtn.type = "button";
+homeBtn.classList.add("ui-float");
 homeBtn.textContent = "🏠 メニュー";
 homeBtn.style.cssText = FLOAT_STYLE + ";bottom:calc(56px + env(safe-area-inset-bottom, 0px))";
 homeBtn.addEventListener("click", () => openMenu());
@@ -966,6 +969,7 @@ function updateGoalUi() {
 }
 
 let menuOpen = false;
+let lastMenuView = "main";      // いま開いているメニューの画面（画面の大きさが変わったとき、開きなおす）
 function updateModeButton() {
   updateGoalUi();
   const hide = menuOpen ? "none" : "";
@@ -973,6 +977,28 @@ function updateModeButton() {
   homeBtn.style.display = hide;
   modeBtn.textContent = mode !== "study" ? "📖 勉強にもどる" : `⚔ ボス戦（記録 ${studiedPool().length} 問）`;
 }
+
+// ---------- 大きい画面の倍率 ----------
+// 画面が広い（幅700px以上・高さ560px以上）ときだけ、画面の大きさに合わせて倍率 --k を決める。スマホでは、倍率1のまま
+function applyUiScale() {
+  const w = window.innerWidth || 0, h = window.innerHeight || 0;
+  const root = document.documentElement;
+  const wide = UI_SCALE_MAX > 1 && w >= 700 && h >= 560;
+  const land = wide && w / h >= 1.25;                       // 横長の画面：問題を左、選択肢を右に並べる
+  root.classList.toggle("ui-wide", wide);
+  root.classList.toggle("ui-land", land);
+  let k = 1;
+  if (wide) k = Math.max(1, Math.min(UI_SCALE_MAX, land ? Math.min(w / 800, h / 480) : Math.min(w / 420, h / 760)));
+  root.style.setProperty("--k", k.toFixed(3));
+  root.style.setProperty("--kf", Math.min(k, 1.5).toFixed(3));           // 下のボタンなどは、そこまで大きくしない
+  root.style.setProperty("--side", Math.max(14, Math.round((w - (land ? 800 : 420) * k) / 2)) + "px");
+}
+applyUiScale();
+let uiResizeTimer = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(uiResizeTimer);
+  uiResizeTimer = setTimeout(() => { applyUiScale(); if (menuOpen) renderMenu(lastMenuView); }, 120);
+});
 
 // ---------- スタートメニュー ----------
 const menu = document.createElement("div");
@@ -997,16 +1023,33 @@ body::before { content: ""; position: fixed; inset: 0; z-index: -1;
 .choice.wrong { background: rgba(160,30,60,.8); }`;
   (document.head || document.body).appendChild(bgStyle);
 }
+// 大きい画面（iPad・パソコン）用：画面に合わせて、全体を大きくする。スマホ（せまい画面）では、何も変わらない
+const wideStyle = document.createElement("style");
+wideStyle.textContent = `
+:root { --k: 1; --kf: 1; --side: 14px; }
+.ui-wide { --hud-h: calc(112px * var(--k)); }
+.ui-wide #hud { zoom: var(--k); height: 112px; padding-left: calc(var(--side) / var(--k)); padding-right: calc(var(--side) / var(--k)); }
+.ui-wide .card { padding: calc(var(--hud-h) + 12px * var(--k)) var(--side) calc(24px * var(--k)); gap: calc(16px * var(--k)); }
+.ui-wide .card > * { zoom: var(--k); }
+.ui-land .card:not(.center) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto;
+  align-content: center; column-gap: calc(36px * var(--k)); row-gap: calc(14px * var(--k)); }
+.ui-land .card:not(.center) > .q-label { grid-column: 1; grid-row: 1; align-self: end; }
+.ui-land .card:not(.center) > .q-text { grid-column: 1; grid-row: 2; }
+.ui-land .card:not(.center) > .result { grid-column: 1; grid-row: 3; }
+.ui-land .card:not(.center) > .choices { grid-column: 2; grid-row: 1 / 4; align-self: center; }
+.ui-wide .ui-float, .ui-wide #toast, .ui-wide .sheet-panel { zoom: var(--kf); }
+.ui-wide .ui-panel { zoom: var(--kf); max-height: calc(85vh / var(--kf)) !important; }`;
+(document.head || document.body).appendChild(wideStyle);
 const menuStyle = document.createElement("style");
 menuStyle.textContent = `
-.mn-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mn-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .mn-cols > * { min-width: 0; }
-.mn-col { display: flex; flex-direction: column; gap: 10px; }
-.mn-btn { padding: 10px 12px !important; }
+.mn-col { display: flex; flex-direction: column; gap: 7px; }
+.mn-btn { padding: 8px 12px !important; border-radius: 12px !important; }
 .mn-label { font-size: 15px; line-height: 1.25; }
 .mn-sub { font-size: 11px; font-weight: 400; opacity: .75; margin-top: 2px; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.mn-title { font-size: 22px; font-weight: 800; text-align: center; }
+.mn-title { font-size: 20px; font-weight: 800; }
 @media (max-height: 560px) {
   .mn-sub, .mn-title, .mn-info, .mn-best { display: none; }
   .mn-btn { padding: 7px 12px !important; }
@@ -1041,20 +1084,20 @@ function buildQuestBox() {
   const n = Math.min(state.questBosses || 0, QUEST_BOSSES);
   const daysLeft = 7 - ((new Date().getDay() + 6) % 7);       // 日曜日まで（今日をふくむ）
   const b = el("div");
-  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;justify-content:center;text-align:center;";
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:9px 12px;display:flex;flex-direction:column;justify-content:center;text-align:center;";
   const t = el("div", "", "📅 今週のクエスト");
   t.style.cssText = "font-weight:800;font-size:15px;";
   const t2 = el("div", "", `ボスを${QUEST_BOSSES}体倒す　${n}/${QUEST_BOSSES}`);
   t2.style.cssText = "font-size:12px;opacity:.9;margin-top:2px;";
   const track = el("div");
-  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:8px 0;";
+  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:5px 0;";
   const fill = el("div");
   fill.style.cssText = `height:100%;width:${(n / QUEST_BOSSES) * 100}%;background:linear-gradient(90deg,#6ea8ff,#b78bff);`;
   track.appendChild(fill);
   const l1 = el("div", "", done ? "✔ 今週は達成！" : `あと${QUEST_BOSSES - n}体（日曜まで${daysLeft}日）`);
   l1.style.cssText = "font-size:12px;";
   const l2 = el("div", "", `達成した週 ${state.questWeeksDone || 0}/${QUEST_CYCLE}　${nextRewardText(true)}`);
-  l2.style.cssText = "font-size:11px;opacity:.75;margin-top:4px;";
+  l2.style.cssText = "font-size:11px;opacity:.75;margin-top:3px;";
   b.appendChild(t); b.appendChild(t2); b.appendChild(track); b.appendChild(l1); b.appendChild(l2);
   if (QUEST_CONSECUTIVE) {
     const l3 = el("div", "", "※1週でも逃すと、0週目から");
@@ -1073,13 +1116,13 @@ function buildStreakBox() {
   const b = el("div");
   b.setAttribute("role", "button");
   b.tabIndex = 0;
-  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,207,63,.5);border-radius:14px;padding:12px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;justify-content:center;";
+  b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,207,63,.5);border-radius:14px;padding:9px 12px;text-align:center;cursor:pointer;display:flex;flex-direction:column;justify-content:center;";
   const big = el("div", "", `🔥 ${cs}日連続`);
-  big.style.cssText = "font-size:24px;font-weight:800;line-height:1.2;";
+  big.style.cssText = "font-size:22px;font-weight:800;line-height:1.2;";
   const best = el("div", "mn-best", `最高 ${state.bestStreak || 0}日`);
   best.style.cssText = "font-size:11px;opacity:.7;";
   const track = el("div");
-  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:8px 0;";
+  track.style.cssText = "height:10px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin:5px 0;";
   const fill = el("div");
   fill.style.cssText = `height:100%;width:${(gdone ? 100 : (gn / DAILY_GOAL) * 100)}%;background:linear-gradient(90deg,#ff9a3d,#ffcf3f);`;
   track.appendChild(fill);
@@ -1091,7 +1134,7 @@ function buildStreakBox() {
   const noteEl = el("div", "", note);
   noteEl.style.cssText = "font-size:12px;";
   const foot = el("div", "", `🎫 おやすみ券 ${state.tickets || 0}枚　▶`);
-  foot.style.cssText = "font-size:12px;font-weight:700;color:#ffcf3f;margin-top:6px;";
+  foot.style.cssText = "font-size:12px;font-weight:700;color:#ffcf3f;margin-top:4px;";
   b.appendChild(big); b.appendChild(best); b.appendChild(track); b.appendChild(noteEl); b.appendChild(foot);
   const open = () => renderMenu("rest");
   b.addEventListener("click", open);
@@ -1382,11 +1425,21 @@ function renderMenu(view) {
   ensureToday();
   menu.textContent = "";
   view = view || "main";
+  lastMenuView = view;
   const titles = { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計", rest: "🎫 おやすみ券" };
-  const maxW = { main: 760, genres: 560, badges: 760, stats: 760, rest: 440 }[view] || 760;
+  const wide = document.documentElement.classList.contains("ui-wide");
+  const maxW = (wide ? { main: 640, genres: 520, badges: 640, stats: 700, rest: 440 } : { main: 760, genres: 560, badges: 760, stats: 760, rest: 440 })[view] || 640;
   const box = el("div");
-  box.style.cssText = `width:100%;max-width:${maxW}px;display:flex;flex-direction:column;gap:10px;margin:auto;`;
-  if (view === "main") box.appendChild(el("div", "mn-title", "📚 SwipeStudy"));
+  box.style.cssText = `width:100%;max-width:${maxW}px;display:flex;flex-direction:column;gap:7px;margin:auto;`;
+  if (view === "main") {
+    const hd = el("div");
+    hd.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:2px 12px;";
+    hd.appendChild(el("div", "mn-title", "📚 SwipeStudy"));
+    const info = el("div", "mn-info", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
+    info.style.cssText = "font-size:13px;opacity:.85;";
+    hd.appendChild(info);
+    box.appendChild(hd);
+  }
   else box.appendChild(subHeader(titles[view] || ""));
 
   if (view === "genres") {
@@ -1409,10 +1462,6 @@ function renderMenu(view) {
     top.appendChild(buildStreakBox());
     top.appendChild(buildQuestBox());
     box.appendChild(top);
-
-    const info = el("div", "mn-info", `Lv.${state.level}　今日 ${state.bossesToday}/${BOSSES_PER_DAY}体　記録 ${state.studied.length}問`);
-    info.style.cssText = "text-align:center;font-size:13px;opacity:.85;";
-    box.appendChild(info);
 
     // 下の段：左＝勉強とボス戦、右＝バッジ・統計・ランキング・復習
     const limit = state.bossesToday >= BOSSES_PER_DAY;
@@ -1448,11 +1497,24 @@ function renderMenu(view) {
     box.appendChild(cols);
   }
   menu.appendChild(box);
+  fitMenu(box);
+}
+// 大きい画面では、メニュー全体を、画面いっぱいまで大きくする（スクロールが出ない範囲で）
+function fitMenu(box) {
+  box.style.zoom = "";
+  if (!document.documentElement.classList.contains("ui-wide") || menu.style.display === "none") return;
+  const cs = getComputedStyle(menu);
+  const availW = menu.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = menu.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  if (!bw || !bh) return;
+  const z = Math.max(1, Math.min(UI_SCALE_MAX, availW / bw, (availH * 0.97) / bh));
+  if (z > 1.01) box.style.zoom = z.toFixed(3);
 }
 function openMenu(view) {
   menuOpen = true;
-  renderMenu(view || "main");
   menu.style.display = "flex";
+  renderMenu(view || "main");
   updateModeButton();
 }
 function closeMenu() {
