@@ -20,13 +20,13 @@ const firebaseConfig = {
 
 const FIELDS = ["level", "xp", "totalDefeated", "bestCombo", "date", "bossesToday", "studied", "history", "yesterdayDone",
   "streak", "bestStreak", "lastGoalDate", "answeredToday", "answeredDate",
-  "tickets", "restDates", "questWeek", "questBosses", "questWeeksDone", "questClearedWeek", "questSeq", "mistakes", "mistakesSeq", "stats", "badges"];
+  "tickets", "restDates", "questWeek", "questBosses", "questWeeksDone", "questClearedWeek", "questSeq", "mistakes", "mistakesSeq", "stats", "badges", "pathCleared"];
 const configured = !String(firebaseConfig.apiKey).startsWith("ここに");
 const LOCAL_KEY = "swipeVocabRPG.v1";        // game.js の STORAGE_KEY と同じ
 const LAST_UID_KEY = "swipeStudy.lastUid";     // この端末のデータが、どのアカウントのものか
 const FRESH = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, bossesToday: 0, studied: [], history: {}, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "",
   tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0,
-  stats: { answered: 0, correct: 0, cleared: 0, questWeeks: 0, restUsed: 0, bestDay: 0, genres: {}, days: {} }, badges: {} };
+  stats: { answered: 0, correct: 0, cleared: 0, questWeeks: 0, restUsed: 0, bestDay: 0, genres: {}, days: {} }, badges: {}, pathCleared: [] };
 const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));   // 記録した問題は、両方を合わせる
 const maxStr = (a, b) => ((a || "") > (b || "") ? (a || "") : (b || ""));   // 新しい日付のほうを残す
 // 目標を達成した日か、おやすみ券で休んだ日のうち、いちばん新しい日
@@ -93,6 +93,10 @@ function mergeStats(a, b) {
     },
     badges
   };
+}
+// クリアしたステージは、両方を合わせる（いちどクリアしたら、消えない）
+function mergePath(a, b) {
+  return { pathCleared: union(a.pathCleared, b.pathCleared) };
 }
 // 「その日に勉強した問題」の記録は、日付ごとに、両方を合わせる
 const unionHist = (a, b) => {
@@ -224,6 +228,7 @@ if (!configured) {
             Object.assign(cloud, mergeQuest(cloud, local));
             Object.assign(cloud, mergeMistakes(cloud, local));
             Object.assign(cloud, mergeStats(cloud, local));
+            Object.assign(cloud, mergePath(cloud, local));
           }
           window.gameApi.applySave(pick(cloud));
           toastMsg("☁ セーブデータを読み込みました");
@@ -239,7 +244,8 @@ if (!configured) {
             ...mergeDaily(local, cloud),
             ...mergeQuest(local, cloud),
             ...mergeMistakes(local, cloud),
-            ...mergeStats(local, cloud)
+            ...mergeStats(local, cloud),
+            ...mergePath(local, cloud)
           });
         }
       } else if (!sameOwner) {
