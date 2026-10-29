@@ -32,6 +32,11 @@ const REVIEW_REQUEUE = 5;          // 復習でまた間違えたら、何問あ
 
 const STATS_DAYS = 30;             // 日ごとの「答えた問題数」を、何日分残すか（統計のグラフ用）
 
+// 学習の道（ステージ式）
+const PATH_BOSS_RATIO = 0.7;       // ステージボスに挑戦するのに必要な「習熟度」（0.7 ＝ 70％。0にすると、いつでも挑戦できる）
+const PATH_REVIEW_RATIO = 0.3;     // 道で勉強するとき、前のステージの問題を「復習」として出す割合
+const STAGE_BONUS_XP = 100;        // ステージボスを、はじめて倒したときにもらえる経験値
+
 // 背景の画像
 const BG_IMAGE = "asset/haikei.PNG";   // 背景にする画像の場所（assetフォルダの中。大文字・小文字も同じにする）。使わないときは "" にする
 const UI_SCALE_MAX = 1.8;              // iPad・パソコンで、画面全体を大きくするときの、いちばん大きい倍率（1にすると、大きくしない）
@@ -54,7 +59,7 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0, stats: normalizeStats(null), badges: {} };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0, stats: normalizeStats(null), badges: {}, pathCourse: "", pathFocus: "", pathCleared: [] };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
@@ -64,6 +69,7 @@ function load() {
     if (!Array.isArray(s.mistakes)) s.mistakes = [];
     s.stats = normalizeStats(s.stats);
     s.badges = normalizeBadges(s.badges);
+    if (!Array.isArray(s.pathCleared)) s.pathCleared = [];
     if (s.date !== todayStr()) { s.date = todayStr(); s.bossesToday = 0; }
     if (s.answeredDate !== todayStr()) { s.answeredDate = todayStr(); s.answeredToday = 0; }
     return s;
@@ -259,6 +265,9 @@ const BADGES = [
   { id: "clr30",  icon: "🧠", name: "復習マスター",       desc: "復習で、30問を克服",         goal: 30,   unit: "問", get: () => state.stats.cleared },
   { id: "gen100", icon: "🎓", name: "教科マスター",       desc: "ひとつの教科で、正解100問",    goal: 100,  unit: "問", get: () => Math.max(0, ...Object.values(state.stats.genres).map((p) => p[1])) },
   { id: "gen5",   icon: "🌈", name: "オールラウンダー",    desc: "5つの教科に挑戦する",         goal: 5,    unit: "教科", get: () => Object.values(state.stats.genres).filter((p) => p[0] > 0).length },
+  { id: "stg1",   icon: "🗺️", name: "道のはじまり",      desc: "ステージボスを、はじめて倒す",   goal: 1,    unit: "ステージ", get: () => state.pathCleared.length },
+  { id: "stg5",   icon: "🧭", name: "道の半ば",          desc: "5つのステージをクリア",        goal: 5,    unit: "ステージ", get: () => state.pathCleared.length },
+  { id: "stg10",  icon: "🎓", name: "道の果て",          desc: "10のステージをクリア（日本史の道を、すべて）", goal: 10, unit: "ステージ", get: () => state.pathCleared.length },
   { id: "rec300", icon: "📝", name: "記録300問",         desc: "記録した問題が300問",         goal: 300,  unit: "問", get: () => state.studied.length },
   { id: "rec1k",  icon: "📖", name: "記録1000問",        desc: "記録した問題が1000問",        goal: 1000, unit: "問", get: () => state.studied.length }
 ];
@@ -427,16 +436,104 @@ function genreOf(q) {
 }
 const GENRES = [ALL].concat(Array.from(new Set(QUESTIONS.map(genreOf))));
 if (!GENRES.includes(state.genre)) state.genre = ALL;
+
+// ---------- 学習の道 ----------
+// 教科ごとに、順番のあるステージ（道）をつくる。ステージの問題は、ラベル「【ジャンル・分野】」で決まる。
+//   genre：ジャンル（ラベルの「・」の前）／ fields：分野（ラベルの「・」のあと）。fields を null にすると、そのジャンルの全部。
+// 「習熟度」＝ そのステージの問題のうち、「記録した」問題で、いま「間違えた問題」に入っていないものの割合。
+const PATHS = {
+  "日本史": [
+    { id: "jp1",  name: "基礎① 古代",        icon: "🏺", genre: "中学日本史", fields: ["古代"] },
+    { id: "jp2",  name: "基礎② 中世",        icon: "⚔️", genre: "中学日本史", fields: ["中世"] },
+    { id: "jp3",  name: "基礎③ 近世",        icon: "🏯", genre: "中学日本史", fields: ["近世"] },
+    { id: "jp4",  name: "基礎④ 近代・現代",   icon: "🚂", genre: "中学日本史", fields: ["近代", "現代"] },
+    { id: "jp5",  name: "入試① 原始・古代",   icon: "🏛️", genre: "日本史",     fields: ["原始", "古代"] },
+    { id: "jp6",  name: "入試② 中世",        icon: "🗡️", genre: "日本史",     fields: ["中世"] },
+    { id: "jp7",  name: "入試③ 近世",        icon: "⛩️", genre: "日本史",     fields: ["近世"] },
+    { id: "jp8",  name: "入試④ 近代",        icon: "🏭", genre: "日本史",     fields: ["近代"] },
+    { id: "jp9",  name: "入試⑤ 現代・文化",   icon: "🎌", genre: "日本史",     fields: ["現代", "文化"] },
+    { id: "jp10", name: "最終試験 入試総合",   icon: "🎓", genre: "日本史",     fields: null }
+  ]
+};
+if (state.pathCourse && !PATHS[state.pathCourse]) state.pathCourse = "";
+let pathMenuCourse = Object.keys(PATHS)[0];   // 道の画面で、いま見ている教科
+let pathSel = "";                              // 道の画面で、いま選んでいるステージ
+let pathRecent = [];                           // 道で、さいきん出した問題（続けて同じ問題が出ないように）
+let pathTag = "";                              // 道で出した問題の、ラベルの前につける目印
+function fieldOf(q) {
+  const m = (q.label || "").match(/【.+?・(.+?)】/);
+  return m ? m[1] : "";
+}
+function stageIds(stage) {                     // ステージの問題のID（いちど計算したら、覚えておく）
+  if (!stage._ids) {
+    stage._ids = QUESTIONS
+      .filter((q) => genreOf(q) === stage.genre && (!stage.fields || stage.fields.includes(fieldOf(q))))
+      .map(qid);
+  }
+  return stage._ids;
+}
+function pathStages(course) {                  // ステージごとの、習熟度・クリア・解放の状態
+  const list = PATHS[course] || [];
+  const cleared = new Set(state.pathCleared);
+  const mistakeIds = new Set(state.mistakes.map((m) => m.id));
+  return list.map((stage, idx) => {
+    const ids = stageIds(stage);
+    const mastered = ids.filter((id) => studiedSet.has(id) && !mistakeIds.has(id)).length;
+    return {
+      stage, idx, ids, total: ids.length, mastered,
+      ratio: ids.length ? mastered / ids.length : 0,
+      cleared: cleared.has(stage.id),
+      unlocked: idx === 0 || cleared.has(list[idx - 1].id)
+    };
+  });
+}
+function pathCurrent(sts) {                    // いま挑戦中のステージ（まだクリアしていない、いちばん前のもの）
+  return sts.find((s) => !s.cleared && s.unlocked) || sts[sts.length - 1];
+}
+function pathFocusStage(sts) {                 // いま勉強の中心にするステージ（選んでいれば、それ。なければ、挑戦中のもの）
+  return sts.find((s) => s.stage.id === state.pathFocus && s.unlocked) || pathCurrent(sts);
+}
+function pathBossNeed(s) { return Math.ceil(PATH_BOSS_RATIO * s.total); }   // ステージボスに必要な、習熟した問題の数
+function pathBossReady(s) { return s.unlocked && !s.cleared && s.mastered >= pathBossNeed(s); }
+function courseGenres(course) {
+  return new Set((PATHS[course] || []).map((st) => st.genre));
+}
 function pool() {
   return state.genre === ALL ? QUESTIONS : QUESTIONS.filter((q) => genreOf(q) === state.genre);
 }
 // ボス戦で出題できる、記録済みの問題（いま選んでいるジャンルのもの）
 function studiedPool() {
+  const cg = state.pathCourse ? courseGenres(state.pathCourse) : null;       // 道で勉強中は、その教科の問題から
   return state.studied
     .map((id) => BY_ID.get(id))
-    .filter((q) => q && (state.genre === ALL || genreOf(q) === state.genre));
+    .filter((q) => q && (cg ? cg.has(genreOf(q)) : (state.genre === ALL || genreOf(q) === state.genre)));
+}
+// 道で勉強するときの出題：勉強の中心のステージの、まだ習熟していない問題を、おもに出す（7割）。
+// ときどき（3割）、ほかのステージの問題を、復習として出す。
+function pathQuestion() {
+  const sts = pathStages(state.pathCourse);
+  if (sts.length === 0) return null;
+  const cur = pathFocusStage(sts);
+  const mistakeIds = new Set(state.mistakes.map((m) => m.id));
+  let main = cur.ids.filter((id) => !studiedSet.has(id) || mistakeIds.has(id));
+  if (main.length === 0) main = cur.ids;                                   // ぜんぶ習熟ずみなら、そのステージの全部から
+  let review = [];
+  sts.forEach((s) => { if (s.idx !== cur.idx && s.unlocked) review = review.concat(s.ids); });
+  const mistaken = review.filter((id) => mistakeIds.has(id));
+  if (mistaken.length > 0) review = mistaken;                              // 間違えた問題があれば、それを優先して復習
+  const useReview = review.length > 0 && Math.random() < PATH_REVIEW_RATIO;
+  const bucket = useReview ? review : main;
+  let cand = bucket.filter((id) => !pathRecent.includes(id));
+  if (cand.length === 0) cand = bucket;
+  const id = cand[Math.floor(Math.random() * cand.length)];
+  pathRecent.push(id);
+  if (pathRecent.length > 8) pathRecent.shift();
+  pathTag = useReview ? "🔁 復習　" : `🗺 ${cur.stage.name}　`;
+  return BY_ID.get(id) || null;
 }
 function nextQuestion() {
+  if (state.pathCourse) { const pq = pathQuestion(); if (pq) return pq; }
+  pathTag = "";
   if (queue.length === 0) queue = shuffle(pool());
   return queue.pop();
 }
@@ -505,7 +602,7 @@ function updateHud() {
   $("enemyName").textContent = boss.monster.name;
   $("combo").textContent = "COMBO " + combo;
   $("today").textContent = `今日 ${state.bossesToday}/${BOSSES_PER_DAY}体`;
-  $("genreBtn").textContent = "📚 " + state.genre;
+  $("genreBtn").textContent = state.pathCourse ? "🗺 " + state.pathCourse : "📚 " + state.genre;
   try { updateModeButton(); } catch (e) { /* 起動中は無視 */ }
 }
 function gainXp(amount) {
@@ -594,7 +691,7 @@ function revealAnswer(ctx) {
 // ---------- 勉強モード ----------
 function addQuestionCard() {
   const q = nextQuestion();
-  const card = buildCard(q, q.label || "この問題は？", "q", onAnswer);
+  const card = buildCard(q, pathTag + (q.label || "この問題は？"), "q", onAnswer);
   feed.appendChild(card);
   observer.observe(card);
   return card;
@@ -604,6 +701,7 @@ function onAnswer(ctx) {
   const { card, q, result } = ctx;
   if (card.dataset.answered === "1") return;
   card.dataset.answered = "1";
+  const readyBefore = state.pathCourse ? pathBossReady(pathFocusStage(pathStages(state.pathCourse))) : false;
 
   const ok = revealAnswer(ctx);
   countAnswer();                          // 今日の目標に数える
@@ -612,6 +710,10 @@ function onAnswer(ctx) {
   recordStudied(q);                       // 答えた問題を、記録する
   state.sinceOffer = (state.sinceOffer || 0) + 1;   // 前回の誘いから、何問答えたか
   addHistory(q);                          // 「今日勉強した問題」としても記録する
+  if (state.pathCourse && !readyBefore) {   // 習熟度が、ステージボスに挑戦できる水準になったら、お知らせ
+    const fs = pathFocusStage(pathStages(state.pathCourse));
+    if (pathBossReady(fs)) setTimeout(() => toast(`⚔ 「${fs.stage.name}」のステージボスに、挑戦できます！`), 900);
+  }
 
   if (ok) {
     combo++;
@@ -740,7 +842,7 @@ function onTestAnswer(ctx) {
   combo++;
   state.bestCombo = Math.max(state.bestCombo, combo);
   gainXp(BASE_XP + Math.min(combo - 1, 5) * 2);
-  if (test.kind === "boss") {
+  if (test.kind === "boss" || test.kind === "stage") {
     boss.hp = BOSS_MAX_HP * (1 - test.correct / test.list.length);
     retrigger($("enemyEmoji"), "hit");
   }
@@ -752,7 +854,9 @@ function onTestAnswer(ctx) {
   save();
 
   if (test.correct === test.list.length) {
-    if (test.kind === "yesterday") yesterdayCleared(result); else testCleared(result);
+    if (test.kind === "yesterday") yesterdayCleared(result);
+    else if (test.kind === "stage") stageCleared(result);
+    else testCleared(result);
   } else {
     // 答えたら、次の問題のカードが現れる。上にスワイプして進む（答えるまでは、次のカードがないので進めない）
     result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
@@ -763,13 +867,14 @@ function onTestAnswer(ctx) {
 
 function testFailed(result) {
   const isBoss = test.kind === "boss";
-  if (isBoss) boss.hp = BOSS_MAX_HP;
+  const isStage = test.kind === "stage";
+  if (isBoss || isStage) boss.hp = BOSS_MAX_HP;
   updateHud();
   const c = el("section", "card center");
   c.dataset.kind = "info";
   c.appendChild(el("div", "big-emoji", "💥"));
-  c.appendChild(el("div", "q-text", isBoss ? "ボスに返り討ちにされた…" : "テストは不合格…"));
-  c.appendChild(el("div", "explain", `${test.correct}／${test.list.length} 問正解。` + (isBoss ? "全問正解で撃破です。" : `全問正解で、追加経験値 +${YESTERDAY_BONUS_XP}！`)));
+  c.appendChild(el("div", "q-text", isBoss ? "ボスに返り討ちにされた…" : isStage ? "ステージボスに返り討ちにされた…" : "テストは不合格…"));
+  c.appendChild(el("div", "explain", `${test.correct}／${test.list.length} 問正解。` + (isBoss ? "全問正解で撃破です。" : isStage ? "全問正解でクリアです。苦手なところを勉強して、また挑戦しよう。" : `全問正解で、追加経験値 +${YESTERDAY_BONUS_XP}！`)));
   const retry = el("button", "btn", "もう一度挑戦 ▶");
   retry.type = "button";
   retry.addEventListener("click", test.retry);         // 問題も、順番も、新しくなる
@@ -837,6 +942,68 @@ function testCleared(result) {
     b.addEventListener("click", endTest);
     c.appendChild(b);
   }
+  result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
+  feed.appendChild(c);
+}
+
+// ---------- 学習の道：勉強・ステージボス ----------
+function startPathStudy(course, stageId) {     // このステージを中心に、道で勉強する
+  closeMenu();
+  state.pathCourse = course;
+  state.pathFocus = stageId;
+  pathRecent = [];
+  save();
+  queue = [];
+  rebuildFeed();
+  const st = (PATHS[course] || []).find((x) => x.id === stageId);
+  toast(`🗺 ${course}の道：${st ? st.name : ""}`);
+}
+function startStageBoss(course, stageId) {    // そのステージの問題から10問。全問正解でクリア
+  const s = pathStages(course).find((x) => x.stage.id === stageId);
+  if (!s || !s.unlocked || s.cleared) return;
+  if (!pathBossReady(s)) { toast(`習熟度が足りません（あと${pathBossNeed(s) - s.mastered}問）`); return; }
+  closeMenu();
+  beginTest(s.ids.map((id) => BY_ID.get(id)).filter(Boolean), "stage", "ステージボス", s.stage.icon, () => startStageBoss(course, stageId));
+  test.stage = s.stage;
+  test.course = course;
+  boss.monster = { emoji: s.stage.icon, name: `ステージボス：${s.stage.name}` };
+  updateHud();
+}
+function stageCleared(result) {
+  const stage = test.stage, course = test.course;
+  const list = PATHS[course] || [];
+  const first = !state.pathCleared.includes(stage.id);
+  if (first) { state.pathCleared.push(stage.id); gainXp(STAGE_BONUS_XP); }
+  const next = list[list.findIndex((x) => x.id === stage.id) + 1];
+  if (next) state.pathFocus = next.id;           // つぎのステージを、勉強の中心にする
+  state.pathCourse = course;
+  save();
+  updateHud();
+  confetti(120);
+  flash();
+  beep([523, 659, 784, 1047, 1319], 0.12);
+  const c = el("section", "card center");
+  c.dataset.kind = "info";
+  c.appendChild(el("div", "big-emoji", "⭐"));
+  c.appendChild(el("div", "q-text", "ステージクリア！"));
+  c.appendChild(el("div", "explain", `${stage.icon} ${stage.name}${first ? `　経験値 +${STAGE_BONUS_XP}` : ""}`));
+  c.appendChild(el("div", "explain", next ? `つぎのステージ「${next.name}」が解放されました！` : `${course}の道を、すべてクリアしました！ 🎉`));
+  if (next) {
+    const go = el("button", "btn", "▶ つぎのステージで勉強");
+    go.type = "button";
+    go.addEventListener("click", () => startPathStudy(course, next.id));
+    c.appendChild(go);
+  } else {
+    const back = el("button", "btn", "📖 勉強にもどる");
+    back.type = "button";
+    back.addEventListener("click", endTest);
+    c.appendChild(back);
+  }
+  const map = el("button", "btn", "🗺 道を見る");
+  map.type = "button";
+  map.style.marginTop = "12px";
+  map.addEventListener("click", () => { pathMenuCourse = course; pathSel = next ? next.id : stage.id; openMenu("path"); });
+  c.appendChild(map);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
 }
@@ -1186,13 +1353,13 @@ function panelTitle(text) {
 }
 
 // 戻るボタンつきの見出し（メニューの中の画面で使う）
-function subHeader(title) {
+function subHeader(title, backView) {
   const row = el("div");
   row.style.cssText = "display:flex;align-items:center;gap:10px;";
   const back = el("button", "", "← もどる");
   back.type = "button";
   back.style.cssText = "font:inherit;font-size:13px;font-weight:700;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 12px;cursor:pointer;white-space:nowrap;";
-  back.addEventListener("click", () => renderMenu("main"));
+  back.addEventListener("click", () => renderMenu(backView || "main"));
   const t = el("div", "", title);
   t.style.cssText = "flex:1;text-align:center;font-weight:800;font-size:18px;padding-right:76px;";   // 戻るボタンの分だけ、中央に寄せる
   row.appendChild(back); row.appendChild(t);
@@ -1348,6 +1515,7 @@ function buildStatsRecords() {
     ["💪 1日の最高", `${st.bestDay}問`],
     ["📅 週間クエスト達成", `${st.questWeeks}週`],
     ["😴 おやすみ券を使った日", `${st.restUsed}日`],
+    ["🗺 クリアしたステージ", `${state.pathCleared.length}`],
     ["🏅 バッジ", `${badgeCount()}/${BADGES.length}`]
   ].forEach(([k, v]) => {
     const r = el("div");
@@ -1409,6 +1577,79 @@ function renderStatsView(box) {
   box.appendChild(note);
 }
 
+// ---------- 学習の道の画面 ----------
+function renderPathView(box) {
+  const course = pathMenuCourse;
+  const sts = pathStages(course);
+  if (sts.length === 0) return;
+  const cur = pathCurrent(sts);
+  if (!sts.some((x) => x.stage.id === pathSel)) pathSel = cur.stage.id;
+  const doneN = sts.filter((x) => x.cleared).length;
+  const head = el("div", "mn-info", `クリア ${doneN}/${sts.length}　いまは「${cur.stage.name}」`);
+  head.style.cssText = "text-align:center;font-weight:700;font-size:13px;";
+  box.appendChild(head);
+
+  const grid = el("div");
+  grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:7px;";
+  sts.forEach((s) => {
+    const isCur = s.stage.id === cur.stage.id;
+    const sel = s.stage.id === pathSel;
+    const tile = el("button");
+    tile.type = "button";
+    const border = sel ? "#ffcf3f" : s.cleared ? "rgba(255,207,63,.85)" : isCur ? "rgba(255,255,255,.8)" : "rgba(255,255,255,.2)";
+    const bg = s.cleared ? "rgba(255,207,63,.16)" : isCur ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.06)";
+    tile.style.cssText = `font:inherit;color:#fff;text-align:left;border-radius:12px;padding:6px 8px;cursor:pointer;border:2px solid ${border};background:${bg};${s.unlocked ? "" : "opacity:.5;"}`;
+    const top = el("div");
+    top.style.cssText = "display:flex;justify-content:space-between;align-items:center;";
+    const ic = el("span", "", s.stage.icon);
+    ic.style.fontSize = "20px";
+    const mk = el("span", "", s.cleared ? "⭐" : !s.unlocked ? "🔒" : isCur ? "▶" : "");
+    mk.style.fontSize = "13px";
+    top.appendChild(ic); top.appendChild(mk);
+    const nm = el("div", "", s.stage.name);
+    nm.style.cssText = "font-size:12px;font-weight:700;margin-top:2px;line-height:1.25;";
+    const tr = el("div");
+    tr.style.cssText = "height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin-top:5px;overflow:hidden;";
+    const fl = el("div");
+    fl.style.cssText = `height:100%;width:${Math.round(s.ratio * 100)}%;background:${s.cleared ? "#ffcf3f" : "#6ea8ff"};`;
+    tr.appendChild(fl);
+    const pc = el("div", "", `習熟 ${Math.round(s.ratio * 100)}％`);
+    pc.style.cssText = "font-size:10px;opacity:.85;margin-top:2px;";
+    tile.appendChild(top); tile.appendChild(nm); tile.appendChild(tr); tile.appendChild(pc);
+    tile.addEventListener("click", () => { pathSel = s.stage.id; renderMenu("path"); });
+    grid.appendChild(tile);
+  });
+  box.appendChild(grid);
+
+  // 選んだステージの、くわしい情報
+  const s = sts.find((x) => x.stage.id === pathSel);
+  const detail = panelBox();
+  const status = s.cleared ? "⭐ クリア済み" : !s.unlocked ? "🔒 ロック中" : s.stage.id === cur.stage.id ? "▶ 挑戦中" : "解放ずみ";
+  const row = el("div");
+  row.style.cssText = "display:flex;justify-content:space-between;align-items:baseline;gap:8px;";
+  const t1 = el("div", "", `${s.stage.icon} ${s.stage.name}`);
+  t1.style.cssText = "font-weight:800;font-size:15px;";
+  const t2 = el("div", "", status);
+  t2.style.cssText = "font-size:12px;opacity:.9;white-space:nowrap;";
+  row.appendChild(t1); row.appendChild(t2);
+  const info = el("div", "mn-info", `習熟 ${s.mastered}/${s.total}問（${Math.round(s.ratio * 100)}％）　ボスは習熟${Math.round(PATH_BOSS_RATIO * 100)}％から`);
+  info.style.cssText = "font-size:12px;opacity:.85;margin:3px 0 8px;";
+  detail.appendChild(row); detail.appendChild(info);
+  const btns = el("div", "mn-cols");
+  btns.appendChild(menuBtn("▶ 勉強する",
+    s.unlocked ? "このステージを中心に出題" : "前のステージをクリアすると解放",
+    () => startPathStudy(course, s.stage.id), !s.unlocked));
+  const need = pathBossNeed(s);
+  btns.appendChild(menuBtn("⚔ ステージボス",
+    !s.unlocked ? "前のステージをクリアすると解放"
+      : s.cleared ? "クリア済み ✔"
+      : s.mastered < need ? `あと${need - s.mastered}問、習熟すると挑戦できます`
+      : `${TEST_SIZE}問・全問正解でクリア（経験値 +${STAGE_BONUS_XP}）`,
+    () => startStageBoss(course, s.stage.id), !pathBossReady(s)));
+  detail.appendChild(btns);
+  box.appendChild(detail);
+}
+
 // ---------- おやすみ券の画面 ----------
 function renderRestView(box) {
   const cs = currentStreak();
@@ -1426,9 +1667,9 @@ function renderMenu(view) {
   menu.textContent = "";
   view = view || "main";
   lastMenuView = view;
-  const titles = { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計", rest: "🎫 おやすみ券" };
+  const titles = { genres: "教科をえらぶ", badges: "🏅 バッジ", stats: "📊 学習の統計", rest: "🎫 おやすみ券", path: `🗺 ${pathMenuCourse}の道` };
   const wide = document.documentElement.classList.contains("ui-wide");
-  const maxW = (wide ? { main: 640, genres: 520, badges: 640, stats: 700, rest: 440 } : { main: 760, genres: 560, badges: 760, stats: 760, rest: 440 })[view] || 640;
+  const maxW = (wide ? { main: 640, genres: 520, badges: 640, stats: 700, rest: 440, path: 640 } : { main: 760, genres: 560, badges: 760, stats: 760, rest: 440, path: 640 })[view] || 640;
   const box = el("div");
   box.style.cssText = `width:100%;max-width:${maxW}px;display:flex;flex-direction:column;gap:7px;margin:auto;`;
   if (view === "main") {
@@ -1440,13 +1681,23 @@ function renderMenu(view) {
     hd.appendChild(info);
     box.appendChild(hd);
   }
-  else box.appendChild(subHeader(titles[view] || ""));
+  else box.appendChild(subHeader(titles[view] || "", view === "path" ? "genres" : "main"));
 
   if (view === "genres") {
     const grid = el("div", "mn-cols");
+    Object.keys(PATHS).forEach((course) => {        // 学習の道（ステージ式）
+      const sts = pathStages(course);
+      const cur = pathCurrent(sts);
+      const b = menuBtn(`🗺 ${course}の道${state.pathCourse === course ? "　✔" : ""}`,
+        `いま：${cur.stage.name}　クリア ${sts.filter((x) => x.cleared).length}/${sts.length}`,
+        () => { pathMenuCourse = course; renderMenu("path"); });
+      b.style.gridColumn = "1 / -1";
+      b.style.border = "2px solid #fff";
+      grid.appendChild(b);
+    });
     GENRES.forEach((g) => {
       const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
-      const cur = g === state.genre ? "　✔" : "";
+      const cur = (g === state.genre && !state.pathCourse) ? "　✔" : "";
       grid.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
     });
     box.appendChild(grid);
@@ -1454,6 +1705,8 @@ function renderMenu(view) {
     renderBadgesView(box);
   } else if (view === "stats") {
     renderStatsView(box);
+  } else if (view === "path") {
+    renderPathView(box);
   } else if (view === "rest") {
     renderRestView(box);
   } else {
@@ -1476,7 +1729,7 @@ function renderMenu(view) {
       closeMenu();
       if (mode !== "study") rebuildFeed();
     }));
-    left.appendChild(menuBtn("📚 教科をえらぶ", `${GENRES.length - 1}教科から選べます`, () => renderMenu("genres")));
+    left.appendChild(menuBtn("📚 教科をえらぶ", `${GENRES.length - 1}教科＋道`, () => renderMenu("genres")));
     left.appendChild(menuBtn("⚔ ボス戦",
       limit ? "今日のボス戦は終了しました" : (n < TEST_MIN ? `記録 ${n}問（${TEST_MIN}問から）` : `記録 ${n}問から、最大${TEST_SIZE}問`),
       () => { closeMenu(); startTest(); }, limit || n < TEST_MIN));
@@ -1525,7 +1778,7 @@ function closeMenu() {
 }
 function pickGenre(g) {
   closeMenu();
-  if (g !== state.genre) { state.genre = g; save(); queue = []; }
+  if (g !== state.genre || state.pathCourse) { state.genre = g; state.pathCourse = ""; save(); queue = []; }
   rebuildFeed();
   toast("📚 " + g);
 }
@@ -1535,9 +1788,15 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menuOpen
 function renderGenreSheet() {
   const list = $("genreList");
   list.textContent = "";
+  Object.keys(PATHS).forEach((course) => {
+    const b = el("button", "genre-item" + (state.pathCourse === course ? " active" : ""), `🗺 ${course}の道`);
+    b.type = "button";
+    b.addEventListener("click", () => { closeGenreSheet(); pathMenuCourse = course; openMenu("path"); });
+    list.appendChild(b);
+  });
   GENRES.forEach((g) => {
     const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
-    const b = el("button", "genre-item" + (g === state.genre ? " active" : ""), `${g}（${n}問）`);
+    const b = el("button", "genre-item" + (g === state.genre && !state.pathCourse ? " active" : ""), `${g}（${n}問）`);
     b.type = "button";
     b.addEventListener("click", () => selectGenre(g));
     list.appendChild(b);
@@ -1566,8 +1825,9 @@ function rebuildFeed() {
 }
 function selectGenre(g) {
   closeGenreSheet();
-  if (g === state.genre) return;
+  if (g === state.genre && !state.pathCourse) return;
   state.genre = g;
+  state.pathCourse = "";
   save();
   queue = [];
   rebuildFeed();
@@ -1617,6 +1877,7 @@ window.gameApi = {
     state.mistakesSeq = s.mistakesSeq || 0;
     state.stats = normalizeStats(s.stats);
     state.badges = normalizeBadges(s.badges);
+    state.pathCleared = Array.isArray(s.pathCleared) ? s.pathCleared.filter((x) => typeof x === "string") : [];
     ensureWeek();
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* 無視 */ }
     rebuildFeed();
