@@ -52,6 +52,7 @@ html, body {
 .card {
   height: 100%;
   scroll-snap-align: start;
+  scroll-snap-stop: always;
   padding: calc(var(--hud-h) + 16px) 20px 28px;
   display: flex; flex-direction: column; justify-content: center; gap: 16px;
   background: radial-gradient(circle at 50% 20%, var(--card), var(--bg) 70%);
