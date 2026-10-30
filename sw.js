@@ -4,7 +4,7 @@
 // 方針：ネットにつながっているときは、いつも最新のファイルを取りにいく（ネット優先）。
 //       つながらないときだけ、前に保存したファイルを使う。
 // ファイルを大きく変えたときは、下の CACHE_VERSION の数字を 1 つ上げてください。
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = "swipestudy-" + CACHE_VERSION;
 
 // 最初に保存しておくファイル（オフラインでも遊べるようにするため）
