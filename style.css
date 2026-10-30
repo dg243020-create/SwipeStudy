@@ -10,6 +10,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0; height: 100%;
+  overflow: hidden;
   background: var(--bg); color: var(--text);
   font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   overscroll-behavior: none;
@@ -37,17 +38,20 @@ html, body {
 .combo { font-weight: 800; color: var(--accent); min-width: 84px; text-align: right; }
 .combo.pop { animation: pop .3s; }
 
-/* Swipe feed */
+/* Swipe feed：画面にぴったり固定して、この中だけがスクロールする */
 .swipe-container {
-  height: 100vh; height: 100dvh;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0;
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   scrollbar-width: none;
 }
 .swipe-container::-webkit-scrollbar { display: none; }
 .card {
-  height: 100vh; height: 100dvh;
-  scroll-snap-align: start; scroll-snap-stop: always;
+  height: 100%;
+  scroll-snap-align: start;
   padding: calc(var(--hud-h) + 16px) 20px 28px;
   display: flex; flex-direction: column; justify-content: center; gap: 16px;
   background: radial-gradient(circle at 50% 20%, var(--card), var(--bg) 70%);
