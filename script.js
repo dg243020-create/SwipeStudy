@@ -1884,31 +1884,24 @@ window.gameApi = {
   }
 };
 
-// ---------- スワイプの補正：1枚ずつ進む・途中で止まらない ----------
+// ---------- スワイプの補正：途中で止まったときだけ、近いカードに寄せる ----------
 (function () {
-  let startIdx = 0, timer = 0, touching = false;
-  const H = () => feed.clientHeight;
+  let timer = 0, touching = false;
   function settle() {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (touching) return;
-      const h = H();
+      const h = feed.clientHeight;
       if (!h) return;
       const last = Math.max(0, feed.children.length - 1);
-      let idx = Math.round(feed.scrollTop / h);
-      idx = Math.max(startIdx - 1, Math.min(startIdx + 1, idx));   // 最大1枚まで
-      idx = Math.max(0, Math.min(last, idx));
-      if (Math.abs(feed.scrollTop - idx * h) > 2) feed.scrollTo({ top: idx * h, behavior: "smooth" });
-    }, 140);
+      const idx = Math.max(0, Math.min(last, Math.round(feed.scrollTop / h)));
+      if (Math.abs(feed.scrollTop - idx * h) > 3) feed.scrollTo({ top: idx * h, behavior: "smooth" });
+    }, 220);   // スクロールが止まって、0.22秒たってから
   }
-  feed.addEventListener("touchstart", () => {
-    touching = true;
-    clearTimeout(timer);
-    startIdx = Math.round(feed.scrollTop / (H() || 1));
-  }, { passive: true });
-  feed.addEventListener("touchend", () => { touching = false; settle(); }, { passive: true });
-  feed.addEventListener("touchcancel", () => { touching = false; settle(); }, { passive: true });
-  feed.addEventListener("scroll", () => { if (!touching) settle(); }, { passive: true });
+  feed.addEventListener("touchstart", () => { touching = true; clearTimeout(timer); }, { passive: true });
+  feed.addEventListener("touchend", () => { touching = false; }, { passive: true });
+  feed.addEventListener("touchcancel", () => { touching = false; }, { passive: true });
+  feed.addEventListener("scroll", settle, { passive: true });
 })();
 
 // ---------- 起動 ----------
