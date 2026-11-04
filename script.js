@@ -2,6 +2,22 @@
 
 // ========== ゲーム本体 ==========
 // 問題データ QUESTIONS は questions.js にあります（index.html で先に読み込まれます）。
+
+<script>
+window.addEventListener("error", function(e){
+  var d = document.createElement("div");
+  d.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#7a0000;color:#fff;font:14px/1.5 sans-serif;padding:10px 14px;white-space:pre-wrap;word-break:break-all;";
+  d.textContent = "⚠ エラー: " + e.message + "\n行: " + e.lineno + " / 列: " + e.colno;
+  (document.body || document.documentElement).appendChild(d);
+});
+window.addEventListener("unhandledrejection", function(e){
+  var d = document.createElement("div");
+  d.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#7a0000;color:#fff;font:14px/1.5 sans-serif;padding:10px 14px;white-space:pre-wrap;word-break:break-all;";
+  d.textContent = "⚠ 非同期エラー: " + (e.reason && e.reason.message ? e.reason.message : e.reason);
+  (document.body || document.documentElement).appendChild(d);
+});
+</script>
+
 const STORAGE_KEY = "swipeVocabRPG.v1";
 const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
 const BOSS_MAX_HP = 100;
