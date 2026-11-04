@@ -458,7 +458,13 @@ const PATHS = {
     { id: "wh1", name: "基礎① 古代",        icon: "🗿", genre: "中学世界史", fields: ["古代"] },
     { id: "wh2", name: "基礎② 中世",        icon: "🕌", genre: "中学世界史", fields: ["中世"] },
     { id: "wh3", name: "基礎③ 近世・近代",   icon: "🚢", genre: "中学世界史", fields: ["近世近代"] },
-    { id: "wh4", name: "基礎④ 帝国主義・現代", icon: "🌍", genre: "中学世界史", fields: ["現代"] }
+    { id: "wh4", name: "基礎④ 帝国主義・現代", icon: "🌍", genre: "中学世界史", fields: ["現代"] },
+    { id: "wh5",  name: "入試① 古代",        icon: "🏛️", genre: "世界史", fields: ["古代"] },
+    { id: "wh6",  name: "入試② 中世",        icon: "🏰", genre: "世界史", fields: ["中世"] },
+    { id: "wh7",  name: "入試③ 中国",        icon: "🐉", genre: "世界史", fields: ["中国"] },
+    { id: "wh8",  name: "入試④ 近世・近代",   icon: "⚓", genre: "世界史", fields: ["近世近代"] },
+    { id: "wh9",  name: "入試⑤ 現代",        icon: "🕊️", genre: "世界史", fields: ["現代"] },
+    { id: "wh10", name: "最終試験 入試総合",   icon: "🎓", genre: "世界史", fields: null }
   ]
 };
 if (state.pathCourse && !PATHS[state.pathCourse]) state.pathCourse = "";
