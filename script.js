@@ -775,8 +775,9 @@ function onAnswer(ctx) {
     beep([220, 180], 0.15);
   }
   // 20〜30問のあいだのランダムな問題数に達したら、ボス戦に誘う（抜き打ち）
-  const offerDue = state.sinceOffer >= state.nextOfferAt && state.bossesToday < BOSSES_PER_DAY && studiedPool().length >= TEST_MIN;
-  if (offerDue) { state.sinceOffer = 0; state.nextOfferAt = rollOffer(); }
+    const limitReached = state.bossesToday >= BOSSES_PER_DAY;
+  const offerDue = !limitReached && state.sinceOffer >= state.nextOfferAt && studiedPool().length >= TEST_MIN;
+  if (offerDue || limitReached) { state.sinceOffer = 0; if (offerDue) state.nextOfferAt = rollOffer(); }
   updateHud();
   save();
 
