@@ -1049,7 +1049,13 @@ function stageCleared(result) {
   const map = el("button", "btn", "🗺 道を見る");
   map.type = "button";
   map.style.marginTop = "12px";
-  map.addEventListener("click", () => { pathMenuCourse = course; pathSel = next ? next.id : stage.id; openMenu("path"); });
+    map.addEventListener("click", () => {
+    pathMenuCourse = course;
+    pathSel = next ? next.id : stage.id;
+    const gg = groupOfCourse(course);
+    menuGroup = gg ? gg.id : "";
+    openMenu("path");
+  });
   c.appendChild(map);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
@@ -1858,24 +1864,14 @@ function renderMenu(view) {
     box.appendChild(subHeader(titles[view] || "", backOf[view] || "main"));
   }
 
-  if (view === "genres") {
-    const grid = el("div", "mn-cols");
-    Object.keys(PATHS).forEach((course) => {        // 学習の道（ステージ式）
-      const sts = pathStages(course);
-      const cur = pathCurrent(sts);
-      const b = menuBtn(`🗺 ${course}の道${state.pathCourse === course ? "　✔" : ""}`,
-        `いま：${cur.stage.name}　クリア ${sts.filter((x) => x.cleared).length}/${sts.length}`,
-        () => { pathMenuCourse = course; renderMenu("path"); });
-      b.style.gridColumn = "1 / -1";
-      b.style.border = "2px solid #fff";
-      grid.appendChild(b);
-    });
-    GENRES.forEach((g) => {
-      const n = g === ALL ? QUESTIONS.length : QUESTIONS.filter((q) => genreOf(q) === g).length;
-      const cur = (g === state.genre && !state.pathCourse) ? "　✔" : "";
-      grid.appendChild(menuBtn(g + cur, `${n}問　記録 ${recordedCount(g)}問`, () => pickGenre(g)));
-    });
-    box.appendChild(grid);
+    if (view === "genres") {
+    renderSubjectTop(box);
+  } else if (view === "group") {
+    renderGroupView(box);
+  } else if (view === "folder") {
+    renderFolderView(box);
+  } else if (view === "badges") {
+    renderBadgesView(box);
   } else if (view === "badges") {
     renderBadgesView(box);
   } else if (view === "stats") {
