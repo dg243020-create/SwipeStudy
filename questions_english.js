@@ -612,7 +612,6 @@ QUESTIONS.push(...[
   { label: "【英語・高校在学】", q: "The book ( ) cover is red is mine. 空所に入る語は？", choices: ["who", "whose", "which"], answer: 1, explain: "「その〜の」の意味の所有格の関係代名詞は whose。the book whose cover 〜 で「表紙が〜の本」" },
   { label: "【英語・高校在学】", q: "( ) you like it or not, you have to do it. 空所に入る語は？", choices: ["Whether", "If", "Unless"], answer: 0, explain: "Whether A or B で「AであろうとBであろうと」（譲歩）。この意味では if は使えない" },
 
-
   
   { label: "【英語・高校在学】", q: "「abandon」の意味は？", choices: ["〜を捨てる、断念する", "〜を吸収する", "〜を加える"], answer: 0, explain: "They abandoned the plan.（彼らはその計画を断念した）。The car was abandoned.（その車は放置された）" },
   { label: "【英語・高校在学】", q: "「abstract」（形容詞）の意味は？", choices: ["具体的な", "抽象的な", "絶対の"], answer: 1, explain: "Love is an abstract idea.（愛は抽象的な概念だ）。反対は concrete（具体的な）" },
