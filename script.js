@@ -4,7 +4,7 @@
 // 問題データ QUESTIONS は questions.js にあります（index.html で先に読み込まれます）。
 
 const STORAGE_KEY = "swipeVocabRPG.v1";
-const BOSSES_PER_DAY = 15;       // 1日に倒せるボスの数（やりすぎ防止）
+const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
 const BOSS_MAX_HP = 100;
 const BASE_XP = 10;             // 正解1回の経験値
 const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
@@ -981,14 +981,13 @@ function testCleared(result) {
     c.appendChild(qe);
     setTimeout(() => toast(qmsg), 700);
   }
-  if (finished) {
-    c.appendChild(el("div", "explain", "今日の探索はここまで。おつかれさま！また明日 🌙"));
-  } else {
-    const b = el("button", "btn", "📖 勉強にもどる");
-    b.type = "button";
-    b.addEventListener("click", endTest);
-    c.appendChild(b);
+    if (finished) {
+    c.appendChild(el("div", "explain", `今日のボスは${BOSSES_PER_DAY}体すべて倒しました！ ボスはまた明日あらわれます。勉強はつづけられます`));
   }
+  const b = el("button", "btn", "📖 勉強にもどる");
+  b.type = "button";
+  b.addEventListener("click", endTest);
+  c.appendChild(b);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプ"));
   feed.appendChild(c);
 }
@@ -2075,11 +2074,7 @@ window.gameApi = {
 function init() {
   boss.monster = MONSTERS[state.totalDefeated % MONSTERS.length];
   updateHud();
-  if (state.bossesToday >= BOSSES_PER_DAY) {
-    showDoneCard();
-  } else {
     addQuestionCard();
-  }
   openMenu();                       // 起動したら、まずメニューを出す
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
