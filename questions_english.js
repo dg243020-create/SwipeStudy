@@ -610,7 +610,7 @@ QUESTIONS.push(...[
   { label: "【英語・高校在学】", q: "Of the two, he is the ( ) careful. 空所に入る語は？", choices: ["more", "most", "much"], answer: 0, explain: "2者の比較では、最上級ではなく比較級を使い、the を付けることがある。（2人のうちでは、彼のほうが注意深い）" },
   { label: "【英語・高校在学】", q: "I'm looking forward to ( ) from you soon. 空所に入る語は？", choices: ["hear", "hearing", "heard"], answer: 1, explain: "look forward to の to は前置詞なので、後ろは名詞か動名詞（〜ing）になる" },
   { label: "【英語・高校在学】", q: "The book ( ) cover is red is mine. 空所に入る語は？", choices: ["who", "whose", "which"], answer: 1, explain: "「その〜の」の意味の所有格の関係代名詞は whose。the book whose cover 〜 で「表紙が〜の本」" },
-  { label: "【英語・高校在学】", q: "( ) you like it or not, you have to do it. 空所に入る語は？", choices: ["Whether", "If", "Unless"], answer: 0, explain: "Whether A or B で「AであろうとBであろうと」（譲歩）。この意味では if は使えない" }
+  { label: "【英語・高校在学】", q: "( ) you like it or not, you have to do it. 空所に入る語は？", choices: ["Whether", "If", "Unless"], answer: 0, explain: "Whether A or B で「AであろうとBであろうと」（譲歩）。この意味では if は使えない" },
 
 
   
