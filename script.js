@@ -4,7 +4,7 @@
 // 問題データ QUESTIONS は questions.js にあります（index.html で先に読み込まれます）。
 
 const STORAGE_KEY = "swipeVocabRPG.v1";
-const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
+const BOSSES_PER_DAY = 15;       // 1日に倒せるボスの数（やりすぎ防止）
 const BOSS_MAX_HP = 100;
 const BASE_XP = 10;             // 正解1回の経験値
 const BOSS_BONUS_XP = 40;       // ボス撃破のボーナス経験値
