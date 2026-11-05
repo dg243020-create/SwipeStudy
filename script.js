@@ -1900,7 +1900,7 @@ function renderMenu(view) {
       closeMenu();
       if (mode !== "study") rebuildFeed();
     }));
-    left.appendChild(menuBtn("📚 教科をえらぶ", `${GENRES.length - 1}教科＋道`, () => renderMenu("genres")));
+    left.appendChild(menuBtn("📚 教科をえらぶ", "国語・社会・理科・英語・その他", () => renderMenu("genres")));
     left.appendChild(menuBtn("⚔ ボス戦",
       limit ? "今日のボス戦は終了しました" : (n < TEST_MIN ? `記録 ${n}問（${TEST_MIN}問から）` : `記録 ${n}問から、最大${TEST_SIZE}問`),
       () => { closeMenu(); startTest(); }, limit || n < TEST_MIN));
