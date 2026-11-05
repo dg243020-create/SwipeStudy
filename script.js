@@ -469,6 +469,37 @@ const PATHS = {
   ]
 };
 if (state.pathCourse && !PATHS[state.pathCourse]) state.pathCourse = "";
+// 英語の道：レベルごとに、100問ずつのステージを自動でつくる（問題を足すと、ステージも増える）
+const EN_LEVELS = [
+  { key: "高校受験", icon: "🌱" },
+  { key: "高校在学", icon: "📘" },
+  { key: "大学受験", icon: "📗" },
+  { key: "大学英語", icon: "🎓" }
+];
+const EN_STAGE_SIZE = 100;          // 1ステージの問題数
+const EN_STAGE_MAX = 5;             // 1レベルのステージ数の上限（500問 ÷ 100問）
+PATHS["英語"] = (function () {
+  const count = {};
+  QUESTIONS.forEach((q) => {
+    if (genreOf(q) === "英語") count[fieldOf(q)] = (count[fieldOf(q)] || 0) + 1;
+  });
+  const stages = [];
+  EN_LEVELS.forEach((lv, li) => {
+    const n = Math.min(EN_STAGE_MAX, Math.ceil((count[lv.key] || 0) / EN_STAGE_SIZE));
+    for (let i = 0; i < n; i++) {
+      stages.push({
+        id: `en${li + 1}_${i + 1}`,
+        name: `${lv.key}${"①②③④⑤"[i]}`,
+        icon: lv.icon,
+        genre: "英語",
+        fields: [lv.key],
+        range: [i * EN_STAGE_SIZE, (i + 1) * EN_STAGE_SIZE]
+      });
+    }
+  });
+  stages.push({ id: "en_final", name: "最終試験 英語総合", icon: "👑", genre: "英語", fields: null });
+  return stages;
+})();
 let pathMenuCourse = Object.keys(PATHS)[0];   // 道の画面で、いま見ている教科
 let pathSel = "";                              // 道の画面で、いま選んでいるステージ
 let pathRecent = [];                           // 道で、さいきん出した問題（続けて同じ問題が出ないように）
@@ -479,9 +510,11 @@ function fieldOf(q) {
 }
 function stageIds(stage) {                     // ステージの問題のID（いちど計算したら、覚えておく）
   if (!stage._ids) {
-    stage._ids = QUESTIONS
+    let ids = QUESTIONS
       .filter((q) => genreOf(q) === stage.genre && (!stage.fields || stage.fields.includes(fieldOf(q))))
       .map(qid);
+    if (stage.range) ids = ids.slice(stage.range[0], stage.range[1]);   // そのジャンルの「何問目〜何問目」だけ使う
+    stage._ids = ids;
   }
   return stage._ids;
 }
