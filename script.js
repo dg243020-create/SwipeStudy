@@ -468,7 +468,7 @@ const PATHS = {
     { id: "wh10", name: "最終試験 入試総合",   icon: "🎓", genre: "世界史", fields: null }
   ]
 };
-if (state.pathCourse && !PATHS[state.pathCourse]) state.pathCourse = "";
+
 // 英語の道：レベルごとに、100問ずつのステージを自動でつくる（問題を足すと、ステージも増える）
 const EN_LEVELS = [
   { key: "高校受験", icon: "🌱" },
@@ -500,6 +500,7 @@ PATHS["英語"] = (function () {
   stages.push({ id: "en_final", name: "最終試験 英語総合", icon: "👑", genre: "英語", fields: null });
   return stages;
 })();
+if (state.pathCourse && !PATHS[state.pathCourse]) state.pathCourse = "";
 let pathMenuCourse = Object.keys(PATHS)[0];   // 道の画面で、いま見ている教科
 let pathSel = "";                              // 道の画面で、いま選んでいるステージ
 let pathRecent = [];                           // 道で、さいきん出した問題（続けて同じ問題が出ないように）
