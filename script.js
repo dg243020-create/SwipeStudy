@@ -1987,10 +1987,6 @@ function rebuildFeed() {
   boss = { hp: BOSS_MAX_HP, monster: MONSTERS[state.totalDefeated % MONSTERS.length] };
   combo = 0;
   updateHud();
-  if (state.bossesToday >= BOSSES_PER_DAY) {
-    showDoneCard();
-    return;
-  }
   bossActive = true;
   addQuestionCard();
 }
