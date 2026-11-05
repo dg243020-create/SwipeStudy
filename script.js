@@ -26,7 +26,7 @@ const QUEST_CONSECUTIVE = false;                     // true にすると、1週
 const REST_KEEP_DAYS = 60;                           // 「おやすみにした日」を、何日分残すか
 
 // 間違えた問題の復習
-const MISTAKE_MAX = 30;            // 記録しておく、間違えた問題の最大数（あふれたら、優先度の低いものからはずす）
+const MISTAKE_MAX = 100;            // 記録しておく、間違えた問題の最大数（あふれたら、優先度の低いものからはずす）
 const MISTAKE_TIME_CAP = 60;       // 答えるまでにかかった時間は、この秒数までを数える
 const MISTAKE_REPEAT_BONUS = 20;   // 何度も間違えた問題の優先度に、1回ごとに足す秒数
 const REVIEW_REQUEUE = 5;          // 復習でまた間違えたら、何問あとに、もう一度出すか
@@ -1069,14 +1069,18 @@ function endTest() {              // ボス戦・復習をやめて、勉強に�
 }
 
 // ---------- 間違えた問題の復習 ----------
-function startReview() {
-  const ids = sortedMistakes().map((m) => m.id);
+function mistakesOf(g) {          // 間違えた問題（優先度が高い順）。g が空か「すべて」なら、ぜんぶ
+  return sortedMistakes().filter((m) => !g || g === ALL || genreOf(BY_ID.get(m.id)) === g);
+}
+function startReview(g) {         // g：復習する教科。省略か「すべて」で、ぜんぶ
+  g = g || ALL;
+  const ids = mistakesOf(g).map((m) => m.id);
   if (ids.length === 0) { toast("間違えた問題は、まだありません"); return; }
-  review = { queue: ids, total: ids.length, cleared: 0 };
+  review = { queue: ids, total: ids.length, cleared: 0, genre: g };
   mode = "review";
   test = null;
   bossActive = false;
-  boss = { hp: BOSS_MAX_HP, monster: { emoji: "🔁", name: "間違えた問題の復習" } };
+  boss = { hp: BOSS_MAX_HP, monster: { emoji: "🔁", name: g === ALL ? "間違えた問題の復習" : `復習：${g}` } };
   combo = 0;
   observer.disconnect();
   feed.textContent = "";
@@ -1133,14 +1137,15 @@ function onReviewAnswer(ctx) {
   ne.style.cssText = "font-weight:700;margin-top:6px;";
   result.appendChild(ne);
   result.appendChild(el("div", "hint", "⬆ 上にスワイプして次へ"));
-  boss.hp = BOSS_MAX_HP * Math.min(1, state.mistakes.length / Math.max(1, review.total));
+  boss.hp = BOSS_MAX_HP * Math.min(1, mistakesOf(review.genre).length / Math.max(1, review.total));
   updateHud();
   save();
   addReviewCard();                        // 次のカード（問題がなければ、おしまいのカード）
 }
 
 function showReviewDone() {
-  const left = state.mistakes.length;
+  const g = review ? review.genre : ALL;
+  const left = mistakesOf(g).length;
   const cleared = review ? review.cleared : 0;
   const c = el("section", "card center");
   c.dataset.kind = "info";
@@ -1151,6 +1156,13 @@ function showReviewDone() {
   b.type = "button";
   b.addEventListener("click", endTest);
   c.appendChild(b);
+  if (state.mistakes.length > 0) {
+    const m = el("button", "btn", "🔁 ほかの教科も復習");
+    m.type = "button";
+    m.style.marginTop = "12px";
+    m.addEventListener("click", () => openMenu("review"));
+    c.appendChild(m);
+  }
   if (left === 0) { confetti(80); beep([523, 659, 784, 1047], 0.12); }
   feed.appendChild(c);
 }
@@ -1838,13 +1850,37 @@ function renderFolderView(box) {      // フォルダの中：教科
   box.appendChild(grid);
 }
 
+function renderReviewView(box) {      // 間違いの復習：教科を選ぶ
+  const list = sortedMistakes();
+  if (list.length === 0) {
+    const none = el("div", "", "間違えた問題は、まだありません。");
+    none.style.cssText = "text-align:center;font-size:13px;opacity:.8;padding:20px 0;";
+    box.appendChild(none);
+    return;
+  }
+  const counts = {};
+  list.forEach((m) => { const g = genreOf(BY_ID.get(m.id)); counts[g] = (counts[g] || 0) + 1; });
+  const grid = el("div", "mn-cols");
+  const all = menuBtn("📚 すべて", `${list.length}問（時間がかかった順）`, () => { closeMenu(); startReview(ALL); });
+  all.style.gridColumn = "1 / -1";
+  all.style.border = "2px solid #fff";
+  grid.appendChild(all);
+  Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach((g) => {
+    const grp = SUBJECT_GROUPS.find((x) => groupGenres(x).includes(g));   // 教科の色
+    const b = menuBtn(g, `${counts[g]}問`, () => { closeMenu(); startReview(g); });
+    if (grp) paintBtn(b, grp);
+    grid.appendChild(b);
+  });
+  box.appendChild(grid);
+}
+
 function renderMenu(view) {
   ensureToday();
   menu.textContent = "";
   view = view || "main";
   lastMenuView = view;
   const mg = SUBJECT_GROUPS.find((x) => x.id === menuGroup);
-  const titles = { genres: "教科をえらぶ", group: mg ? `${mg.icon} ${mg.name}` : "教科", folder: `📁 ${menuFolder}`,
+  const titles = { genres: "教科をえらぶ", review: "🔁 間違いの復習", group: mg ? `${mg.icon} ${mg.name}` : "教科", folder: `📁 ${menuFolder}`,
     badges: "🏅 バッジ", stats: "📊 学習の統計", rest: "🎫 おやすみ券", path: `🗺 ${pathMenuCourse}の道` };
   const wide = document.documentElement.classList.contains("ui-wide");
   const maxW = (wide ? { main: 640, genres: 520, badges: 640, stats: 700, rest: 440, path: 640 } : { main: 760, genres: 560, badges: 760, stats: 760, rest: 440, path: 640 })[view] || 640;
@@ -1870,6 +1906,8 @@ function renderMenu(view) {
     renderGroupView(box);
   } else if (view === "folder") {
     renderFolderView(box);
+  } else if (view === "review") {
+    renderReviewView(box);
   } else if (view === "badges") {
     renderBadgesView(box);
   } else if (view === "badges") {
@@ -1914,9 +1952,9 @@ function renderMenu(view) {
       if (typeof window.openRanking === "function") window.openRanking();
       else alert("ランキングを使うには、ログイン機能（cloud.js）が必要です。");
     }));
-    right.appendChild(menuBtn("🔁 間違いの復習",
-      mc ? `いま ${mc}問（時間がかかった順）` : "間違えた問題は、まだなし",
-      () => { closeMenu(); startReview(); }, mc === 0));
+     right.appendChild(menuBtn("🔁 間違いの復習",
+      mc ? `いま ${mc}問（教科ごとに選べます）` : "間違えた問題は、まだなし",
+      () => renderMenu("review"), mc === 0));
     cols.appendChild(left); cols.appendChild(right);
     box.appendChild(cols);
   }
