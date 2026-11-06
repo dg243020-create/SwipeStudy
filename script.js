@@ -1734,7 +1734,7 @@ function renderRestView(box) {
 // どこにも入れていない教科は、自動で「その他」に入る。まだ問題がない教科は、表示されない。
 const SUBJECT_GROUPS = [
   { id: "kokugo", name: "国語", icon: "📕", bg: "#e0405a", fg: "#ffffff", paths: [],
-    items: ["国語", "現代文", "古文", "漢文", "漢字"] },
+    items: ["国語", "現代文", "古文", "古文助動詞", "漢文", "漢字"] },
   { id: "shakai", name: "社会", icon: "🌏", bg: "#ffcf3f", fg: "#1a1033", paths: ["日本史", "世界史"],
     items: ["日本史", "世界史", "地理",
       { folder: "政治・経済・倫理", genres: ["政治", "経済", "倫理"] },
