@@ -546,14 +546,16 @@ function courseGenres(course) {
   return new Set((PATHS[course] || []).map((st) => st.genre));
 }
 function pool() {
-  return state.genre === ALL ? QUESTIONS : QUESTIONS.filter((q) => genreOf(q) === state.genre);
+  return QUESTIONS.filter((q) =>
+    (state.genre === ALL || genreOf(q) === state.genre) && (!state.field || fieldOf(q) === state.field));
 }
 // ボス戦で出題できる、記録済みの問題（いま選んでいるジャンルのもの）
 function studiedPool() {
   const cg = state.pathCourse ? courseGenres(state.pathCourse) : null;       // 道で勉強中は、その教科の問題から
   return state.studied
     .map((id) => BY_ID.get(id))
-    .filter((q) => q && (cg ? cg.has(genreOf(q)) : (state.genre === ALL || genreOf(q) === state.genre)));
+    .filter((q) => q && (cg ? cg.has(genreOf(q)) :
+      ((state.genre === ALL || genreOf(q) === state.genre) && (!state.field || fieldOf(q) === state.field))));
 }
 // 道で勉強するときの出題：勉強の中心のステージの、まだ習熟していない問題を、おもに出す（7割）。
 // ときどき（3割）、ほかのステージの問題を、復習として出す。
@@ -649,7 +651,7 @@ function updateHud() {
   $("enemyName").textContent = boss.monster.name;
   $("combo").textContent = "COMBO " + combo;
   $("today").textContent = `今日 ${state.bossesToday}/${BOSSES_PER_DAY}体`;
-  $("genreBtn").textContent = state.pathCourse ? "🗺 " + state.pathCourse : "📚 " + state.genre;
+    $("genreBtn").textContent = state.pathCourse ? "🗺 " + state.pathCourse : "📚 " + state.genre + (state.field ? "・" + state.field : "");
   try { updateModeButton(); } catch (e) { /* 起動中は無視 */ }
 }
 function gainXp(amount) {
@@ -1750,7 +1752,7 @@ const SUBJECT_GROUPS = [
 ];
 let menuGroup = "";                   // いま開いているグループ
 let menuFolder = "";                  // いま開いているフォルダ
-function itemGenres(it) { return typeof it === "string" ? [it] : it.genres; }
+function itemGenres(it) { return typeof it === "string" ? [it] : (it.genres || [it.genre]); }
 function groupGenres(g) {             // そのグループに入っている教科名（問題があるものだけ）
   if (g.id === "other") {
     const used = new Set();
@@ -2003,11 +2005,12 @@ function closeMenu() {
   menu.style.display = "none";
   updateModeButton();
 }
-function pickGenre(g) {
+function pickGenre(g, f) {
+  f = f || "";
   closeMenu();
-  if (g !== state.genre || state.pathCourse) { state.genre = g; state.pathCourse = ""; save(); queue = []; }
+  if (g !== state.genre || f !== state.field || state.pathCourse) { state.genre = g; state.field = f; state.pathCourse = ""; save(); queue = []; }
   rebuildFeed();
-  toast("📚 " + g);
+  toast("📚 " + g + (f ? "・" + f : ""));
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menuOpen) closeMenu(); });
 
