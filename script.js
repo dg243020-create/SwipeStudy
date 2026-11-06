@@ -1763,7 +1763,7 @@ const SUBJECT_GROUPS = [
   { id: "rika", name: "理科", icon: "🧪", bg: "#2fbf71", fg: "#0d2a1a", paths: [],
     items: ["物理", "化学", "生物", "地学", "中学理科"] },
   { id: "eigo", name: "英語", icon: "🔤", bg: "#4f8cff", fg: "#ffffff", paths: ["英語"],
-    items: [{ folder: "英語", genre: "英語", fields: ["高校受験", "高校在学", "大学受験", "大学英語"] }] },
+    items: [{ folder: "英語", genre: "英語", fields: ["高校受験", "高校在学", "大学受験", "大学英語", "並べ替え"] }] },
   { id: "other", name: "その他", icon: "📦", bg: "#9aa3b5", fg: "#1a1033", paths: [],
     items: [] }                       // 「その他」は、上のどれにも入らない教科が、自動で入る
 ];
