@@ -60,7 +60,7 @@ function todayStr() {
   return new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（端末のローカル日付）
 }
 function load() {
-  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0, stats: normalizeStats(null), badges: {}, pathCourse: "", pathFocus: "", pathCleared: [] };
+  const base = { level: 1, xp: 0, totalDefeated: 0, bestCombo: 0, date: todayStr(), bossesToday: 0, genre: "すべて", field: "", studied: [], history: {}, sinceOffer: 0, nextOfferAt: 0, yesterdayDone: "", streak: 0, bestStreak: 0, lastGoalDate: "", answeredToday: 0, answeredDate: "", tickets: 0, restDates: [], questWeek: "", questBosses: 0, questWeeksDone: 0, questClearedWeek: "", questSeq: 0, mistakes: [], mistakesSeq: 0, stats: normalizeStats(null), badges: {}, pathCourse: "", pathFocus: "", pathCleared: [] };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const s = Object.assign(base, saved);
@@ -436,7 +436,7 @@ function genreOf(q) {
   return m ? m[1] : "その他";
 }
 const GENRES = [ALL].concat(Array.from(new Set(QUESTIONS.map(genreOf))));
-if (!GENRES.includes(state.genre)) state.genre = ALL;
+if (!GENRES.includes(state.genre)) { state.genre = ALL; state.field = ""; }
 
 // ---------- 学習の道 ----------
 // 教科ごとに、順番のあるステージ（道）をつくる。ステージの問題は、ラベル「【ジャンル・分野】」で決まる。
