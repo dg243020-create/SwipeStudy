@@ -3,6 +3,23 @@
 // ========== ゲーム本体 ==========
 // 問題データ QUESTIONS は questions.js にあります（index.html で先に読み込まれます）。
 
+// 英語：「大学受験」に混ざっている問題を、大学英語と並べ替えに分ける
+(function () {
+  const OLD = "【英語・大学受験】";
+  // ① 「並べ替え：」で始まる問題 → 並べ替え
+  QUESTIONS.forEach((q) => {
+    if (q.label === OLD && q.q.indexOf("並べ替え：") === 0) q.label = "【英語・並べ替え】";
+  });
+  // ② 「akin」から続く100問 → 大学英語
+  const start = QUESTIONS.findIndex((q) => q.label === OLD && q.q.indexOf("「akin」") === 0);
+  if (start >= 0) {
+    let n = 0;
+    for (let i = start; i < QUESTIONS.length && n < 100; i++) {
+      if (QUESTIONS[i].label === OLD) { QUESTIONS[i].label = "【英語・大学英語】"; n++; }
+    }
+  }
+})();
+
 const STORAGE_KEY = "swipeVocabRPG.v1";
 const BOSSES_PER_DAY = 3;       // 1日に倒せるボスの数（やりすぎ防止）
 const BOSS_MAX_HP = 100;
