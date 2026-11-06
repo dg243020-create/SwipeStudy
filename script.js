@@ -1734,7 +1734,9 @@ function renderRestView(box) {
 // どこにも入れていない教科は、自動で「その他」に入る。まだ問題がない教科は、表示されない。
 const SUBJECT_GROUPS = [
   { id: "kokugo", name: "国語", icon: "📕", bg: "#e0405a", fg: "#ffffff", paths: [],
-    items: ["国語", "現代文", "古文", "古文助動詞", "漢文", "漢字"] },
+    items: ["国語", "現代文",
+      { folder: "古文", genres: ["古文", "古文単語", "古文助動詞"] },
+      "漢文", "漢字"] },
   { id: "shakai", name: "社会", icon: "🌏", bg: "#ffcf3f", fg: "#1a1033", paths: ["日本史", "世界史"],
     items: ["日本史", "世界史", "地理",
       { folder: "政治・経済・倫理", genres: ["政治", "経済", "倫理"] },
@@ -1742,7 +1744,7 @@ const SUBJECT_GROUPS = [
   { id: "rika", name: "理科", icon: "🧪", bg: "#2fbf71", fg: "#0d2a1a", paths: [],
     items: ["物理", "化学", "生物", "地学", "中学理科"] },
   { id: "eigo", name: "英語", icon: "🔤", bg: "#4f8cff", fg: "#ffffff", paths: ["英語"],
-    items: ["英語"] },
+    items: [{ folder: "英語", genre: "英語", fields: ["高校受験", "高校在学", "大学受験", "大学英語"] }] },
   { id: "other", name: "その他", icon: "📦", bg: "#9aa3b5", fg: "#1a1033", paths: [],
     items: [] }                       // 「その他」は、上のどれにも入らない教科が、自動で入る
 ];
@@ -1817,7 +1819,7 @@ function renderGroupView(box) {       // グループの中：道と、教科と
       paintBtn(b, g);
       grid.appendChild(b);
     } else {
-      const names = it.genres.filter((n) => GENRES.includes(n));
+      const names = itemGenres(it).filter((n) => GENRES.includes(n));
       if (names.length === 0) return;
       const st = genresStat(names);
       const here = !state.pathCourse && names.includes(state.genre);
@@ -1835,18 +1837,34 @@ function renderGroupView(box) {       // グループの中：道と、教科と
   }
   box.appendChild(grid);
 }
-function renderFolderView(box) {      // フォルダの中：教科
+function renderFolderView(box) {      // フォルダの中：教科（または、分野）
   const g = SUBJECT_GROUPS.find((x) => x.id === menuGroup);
   const it = g && g.items.find((x) => typeof x !== "string" && x.folder === menuFolder);
   if (!it) { renderSubjectTop(box); return; }
   const grid = el("div", "mn-cols");
-  it.genres.filter((n) => GENRES.includes(n)).forEach((n) => {
-    const st = genresStat([n]);
-    const b = menuBtn(n + ((n === state.genre && !state.pathCourse) ? "　✔" : ""),
-      `${st.n}問　記録 ${st.rec}問`, () => pickGenre(n));
-    paintBtn(b, g);
-    grid.appendChild(b);
-  });
+  if (it.fields) {                    // 分野で絞れるフォルダ（英語のレベルなど）
+    const here = (f) => !state.pathCourse && state.genre === it.genre && state.field === f;
+    const all = menuBtn(`${it.genre}ぜんぶ${here("") ? "　✔" : ""}`, `${genresStat([it.genre]).n}問`, () => pickGenre(it.genre));
+    paintBtn(all, g);
+    all.style.gridColumn = "1 / -1";
+    grid.appendChild(all);
+    it.fields.forEach((f) => {
+      const ids = QUESTIONS.filter((q) => genreOf(q) === it.genre && fieldOf(q) === f);
+      if (ids.length === 0) return;
+      const rec = state.studied.filter((id) => { const q = BY_ID.get(id); return q && genreOf(q) === it.genre && fieldOf(q) === f; }).length;
+      const b = menuBtn(f + (here(f) ? "　✔" : ""), `${ids.length}問　記録 ${rec}問`, () => pickGenre(it.genre, f));
+      paintBtn(b, g);
+      grid.appendChild(b);
+    });
+  } else {
+    it.genres.filter((n) => GENRES.includes(n)).forEach((n) => {
+      const st = genresStat([n]);
+      const b = menuBtn(n + ((n === state.genre && !state.pathCourse) ? "　✔" : ""),
+        `${st.n}問　記録 ${st.rec}問`, () => pickGenre(n));
+      paintBtn(b, g);
+      grid.appendChild(b);
+    });
+  }
   box.appendChild(grid);
 }
 
