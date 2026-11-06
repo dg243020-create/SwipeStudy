@@ -103,7 +103,22 @@
     ["彼女も私も、それを知らなかった。", "( I / nor / she ) knew about it.", "Neither she nor I", "Neither I she nor", "Neither nor she I", "neither A nor B「AもBも〜ない」。動詞は B（近いほう）に合わせる"],
     ["彼は私に会うために、はるばるやって来た。", "He came ( all / the / way / to see me ).", "all the way to see me", "the all way to see me", "all way the to see me", "all the way は「はるばる」。この形のまま覚える"],
     ["彼女は彼を医者だと思い込んでいる。", "She takes ( for / him / a doctor ).", "him for a doctor", "for him a doctor", "him a doctor for", "take A for B は「AをBだと（誤って）思う」。mistake A for B と近い意味"],
-    ["私はその事故で彼を責めた。", "I blamed ( for / him / the accident ).", "him for the accident", "for him the accident", "him the for accident", "blame A for B は「AをBのことで責める」。A は人、B は理由"],
+    ["私はその事故で彼を責めた。", "I blamed ( for / him / the accident ).", "him for the accident", "for him the accident", "him the for accident", "blame A for B は「AをBのことで責める」。A は人、B は理由"],    
+  ];
+
+  QUESTIONS.push(...D.map(function (r, i) {
+    const pos = i % 3;
+    const ch = [r[3], r[4]];
+    ch.splice(pos, 0, r[2]);
+    return {
+      label: L,
+      q: "並べ替え：「" + r[0] + "」 " + r[1] + " 正しい並べ方は？",
+      choices: ch,
+      answer: pos,
+      explain: r[5]
+    };
+  }));
+})();
 
     // 英語・並べ替え（大学受験）第2弾 1〜100問。questions.js の後、script.js の前に読み込みます。
 "use strict";
