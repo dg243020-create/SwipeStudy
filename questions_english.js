@@ -1727,8 +1727,12 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "I will help ( ) asks me. 空所に入る語は？", choices: ["whoever", "whomever", "whom"], answer: 0, explain: "複合関係代名詞。asks の主語になるので主格の whoever を使う。whomever は目的格" },
   { label: "【英語・大学受験】", q: "He didn't say it to hurt her. Not ( ) he was kind, but he was honest. 空所に入る語は？", choices: ["that", "what", "so"], answer: 0, explain: "Not that 〜 は「〜というわけではないが」。直前の内容を打ち消して補足する表現" },
   { label: "【英語・大学受験】", q: "The event will be held ( ) of whether it rains. 空所に入る語は？", choices: ["despite", "regardless", "except"], answer: 1, explain: "regardless of whether 〜 は「〜であろうとなかろうと」。of は前置詞なので、後ろは whether 節か名詞" },
+  
   { label: "【英語・大学受験】", q: "He is smart. ( ) is more, he is kind. 空所に入る語は？", choices: ["That", "What", "Which"], answer: 1, explain: "what is more は「そのうえ、さらに」。what is worse は「さらに悪いことに」" },
+  
 // 英語（大学受験）追加100問（その3）。questions.js の後、script.js の前に読み込みます。
+
+  
   { label: "【英語・大学受験】", q: "「abdicate」の意味は？", choices: ["（王位・権利を）放棄する、退位する", "〜を連れ去る", "〜を主張する"], answer: 0, explain: "The king abdicated the throne.（王は退位した）。名詞は abdication" },
   { label: "【英語・大学受験】", q: "「abrasive」の意味は？", choices: ["吸収性の", "とげとげしい、耳障りな", "抽象的な"], answer: 1, explain: "He has an abrasive personality.（彼はとげのある性格だ）。「研磨用の」の意味もある" },
   { label: "【英語・大学受験】", q: "「acclaim」の意味は？", choices: ["〜を非難する", "〜を主張する", "称賛（する）、喝采"], answer: 2, explain: "The film won critical acclaim.（その映画は批評家から称賛を得た）。形容詞 acclaimed は「高く評価された」" },
