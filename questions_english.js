@@ -1528,7 +1528,9 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "( ) it not been for your help, I would have failed. 空所に入る語（句）は？", choices: ["Had", "Did", "Were"], answer: 0, explain: "If it had not been for 〜 の if を省略した倒置形が Had it not been for 〜（〜がなかったら）。仮定法過去完了" },
   { label: "【英語・大学受験】", q: "He talks as if he ( ) everything. 空所に入る語（句）は？", choices: ["knows", "knew", "has known"], answer: 1, explain: "as if ＋ 仮定法過去で「まるで〜であるかのように」。事実はそうではないという気持ちを表す" },
   { label: "【英語・大学受験】", q: "Not only ( ) he sing well, but he also plays the guitar. 空所に入る語（句）は？", choices: ["is", "does", "has"], answer: 1, explain: "Not only が文頭に来ると倒置になる。一般動詞 sing の文なので、does he sing の形" },
-  { label: "【英語・大学受験】", q: "「akin」（be akin to 〜）の意味は？", choices: ["〜に敵対する", "〜に慣れた", "〜に似た、同種の"], answer: 2, explain: "His feeling was akin to jealousy.（彼の気持ちは嫉妬に近いものだった）。similar to 〜 のかたい言い方" },
+  // 英語（大学受験）追加400問（1ファイルに統合）。questions.js の後、script.js の前に読み込みます。
+
+{ label: "【英語・大学受験】", q: "「akin」（be akin to 〜）の意味は？", choices: ["〜に敵対する", "〜に慣れた", "〜に似た、同種の"], answer: 2, explain: "His feeling was akin to jealousy.（彼の気持ちは嫉妬に近いものだった）。similar to 〜 のかたい言い方" },
   { label: "【英語・大学受験】", q: "「attrition」の意味は？", choices: ["増加", "消耗、徐々に減ること", "寄付"], answer: 1, explain: "a war of attrition（消耗戦）。Staff attrition is high.（人員の自然減が多い）" },
   { label: "【英語・大学受験】", q: "「benevolent」の意味は？", choices: ["慈悲深い、善意のある", "悪意のある", "目立つ"], answer: 0, explain: "a benevolent king（慈悲深い王）。反対は malevolent（悪意のある）" },
   { label: "【英語・大学受験】", q: "「brevity」の意味は？", choices: ["長さ", "大胆さ", "簡潔さ"], answer: 2, explain: "Brevity is the soul of wit.（簡潔さは機知の真髄）。形容詞は brief" },
@@ -1628,8 +1630,8 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "The company stands ( ) lose millions if the deal falls through. 空所に入る語は？", choices: ["by", "to", "for"], answer: 1, explain: "stand to 〜 は「（このままだと）〜することになりそうだ、〜する可能性がある」。stand to lose / gain の形でよく使う" },
   { label: "【英語・大学受験】", q: "( ) said that, I still agree with her. 空所に入る語は？", choices: ["Had", "Be", "Having"], answer: 2, explain: "Having said that, 〜 は「そうは言っても、〜」。直前の発言に譲歩を加える分詞構文の慣用表現" },
   { label: "【英語・大学受験】", q: "( ) that prices are rising, we should save more money. 空所に入る語は？", choices: ["Given", "Giving", "Gave"], answer: 0, explain: "given that 〜 は「〜ということを考えると、〜であるからには」。接続詞のように使える分詞" },
-// 英語（大学受験）追加100問（その2）。questions.js の後、script.js の前に読み込みます。
-  { label: "【英語・大学受験】", q: "「abate」の意味は？", choices: ["〜を乱す", "〜を加える", "（勢いが）弱まる、おさまる"], answer: 2, explain: "The storm began to abate.（嵐は弱まり始めた）。名詞は abatement" },
+
+{ label: "【英語・大学受験】", q: "「abate」の意味は？", choices: ["〜を乱す", "〜を加える", "（勢いが）弱まる、おさまる"], answer: 2, explain: "The storm began to abate.（嵐は弱まり始めた）。名詞は abatement" },
   { label: "【英語・大学受験】", q: "「acquit」の意味は？", choices: ["〜を無罪とする", "〜を獲得する", "〜を告発する"], answer: 0, explain: "He was acquitted of the charge.（彼は無罪となった）。acquit A of B の形で使う。反対は convict" },
   { label: "【英語・大学受験】", q: "「adversity」の意味は？", choices: ["広告", "逆境、不運", "助言"], answer: 1, explain: "She showed courage in the face of adversity.（彼女は逆境の中で勇気を示した）。形容詞は adverse" },
   { label: "【英語・大学受験】", q: "「affluent」の意味は？", choices: ["影響を受けやすい", "流れ込む", "裕福な、豊かな"], answer: 2, explain: "an affluent neighborhood（裕福な地域）。名詞は affluence" },
@@ -1723,17 +1725,14 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "The doctor recommended that he ( ) more rest. 空所に入る語は？", choices: ["gets", "got", "get"], answer: 2, explain: "recommend / suggest / insist などのあとの that 節では、動詞は原形（仮定法現在）になる" },
   { label: "【英語・大学受験】", q: "It never ( ) to me that she might be lying. 空所に入る語は？", choices: ["came", "occurred", "thought"], answer: 1, explain: "It occurs to 〜 that ... は「〜に…という考えが浮かぶ」。It never occurred to me that 〜 で「〜とは思いもしなかった」" },
   { label: "【英語・大学受験】", q: "( ) you were offered the job, would you take it? 空所に入る語は？", choices: ["Supposing", "Suppose of", "Supposed"], answer: 0, explain: "supposing (that) 〜 は「もし〜としたら」。suppose と同じ意味で、仮定法とともによく使う" },
-  { label: "【英語・大学受験】", q: "I would stay home ( ) go out in this weather. 空所に入る語（句）は？", choices: ["rather than", "more than", "other than"], answer: 0, explain: "A rather than B は「BよりむしろA」。would rather A than B との違いに注意（ここは would ＋ stay ... rather than go out）" },
+  { label: "【英語・大学受験】", q: "I would stay home ( ) go out in this weather. 空所に入る語（句）は？", choices: ["rather than", "more than", "other than"], answer: 0, explain: "A rather than B は「BよりむしろA」。rather than の後ろにも動詞の原形が続く（would stay ... rather than go out）。more than（〜以上）や other than（〜以外）では意味が通らない" },
   { label: "【英語・大学受験】", q: "I will help ( ) asks me. 空所に入る語は？", choices: ["whoever", "whomever", "whom"], answer: 0, explain: "複合関係代名詞。asks の主語になるので主格の whoever を使う。whomever は目的格" },
-  { label: "【英語・大学受験】", q: "He didn't say it to hurt her. Not ( ) he was kind, but he was honest. 空所に入る語は？", choices: ["that", "what", "so"], answer: 0, explain: "Not that 〜 は「〜というわけではないが」。直前の内容を打ち消して補足する表現" },
+  { label: "【英語・大学受験】", q: "I'm not going to the party. Not ( ) I dislike him, but I'm too busy. 空所に入る語は？", choices: ["that", "what", "so"], answer: 0, explain: "Not that 〜 は「〜というわけではないが」。直前の内容から推測されそうな理由を打ち消して、あとで本当の理由を補う表現" },
   { label: "【英語・大学受験】", q: "The event will be held ( ) of whether it rains. 空所に入る語は？", choices: ["despite", "regardless", "except"], answer: 1, explain: "regardless of whether 〜 は「〜であろうとなかろうと」。of は前置詞なので、後ろは whether 節か名詞" },
-  
   { label: "【英語・大学受験】", q: "He is smart. ( ) is more, he is kind. 空所に入る語は？", choices: ["That", "What", "Which"], answer: 1, explain: "what is more は「そのうえ、さらに」。what is worse は「さらに悪いことに」" },
-  
-// 英語（大学受験）追加100問（その3）。questions.js の後、script.js の前に読み込みます。
+  { label: "【英語・大学受験】", q: "「ostentatious」の意味は？", choices: ["見せびらかしの、これ見よがしの", "控えめな", "慎重な"], answer: 0, explain: "an ostentatious display of wealth（富のこれ見よがしな誇示）。名詞は ostentation" },
 
-  
-  { label: "【英語・大学受験】", q: "「abdicate」の意味は？", choices: ["（王位・権利を）放棄する、退位する", "〜を連れ去る", "〜を主張する"], answer: 0, explain: "The king abdicated the throne.（王は退位した）。名詞は abdication" },
+{ label: "【英語・大学受験】", q: "「abdicate」の意味は？", choices: ["（王位・権利を）放棄する、退位する", "〜を連れ去る", "〜を主張する"], answer: 0, explain: "The king abdicated the throne.（王は退位した）。名詞は abdication" },
   { label: "【英語・大学受験】", q: "「abrasive」の意味は？", choices: ["吸収性の", "とげとげしい、耳障りな", "抽象的な"], answer: 1, explain: "He has an abrasive personality.（彼はとげのある性格だ）。「研磨用の」の意味もある" },
   { label: "【英語・大学受験】", q: "「acclaim」の意味は？", choices: ["〜を非難する", "〜を主張する", "称賛（する）、喝采"], answer: 2, explain: "The film won critical acclaim.（その映画は批評家から称賛を得た）。形容詞 acclaimed は「高く評価された」" },
   { label: "【英語・大学受験】", q: "「acquiesce」の意味は？", choices: ["黙って従う、しぶしぶ同意する", "〜を獲得する", "〜を要求する"], answer: 0, explain: "He acquiesced to their demands.（彼は彼らの要求にしぶしぶ従った）。acquiesce in / to 〜 の形で使う" },
@@ -1833,9 +1832,8 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "How did you come ( ) know him? 空所に入る語は？", choices: ["to", "for", "by"], answer: 0, explain: "come to 〜 は「〜するようになる」。（どうして彼と知り合ったのですか）" },
   { label: "【英語・大学受験】", q: "( ) fewer than 100 people attended the meeting. 空所に入る語は？", choices: ["Not", "None", "No"], answer: 2, explain: "no fewer than 〜 は「〜も（多い）」。not fewer than 〜 は「少なくとも〜」で意味が異なる" },
   { label: "【英語・大学受験】", q: "I finally got around ( ) writing the report. 空所に入る語は？", choices: ["at", "to", "for"], answer: 1, explain: "get around to ～ing は「（やっと）〜する時間・機会が取れる、〜に取りかかる」。to は前置詞なので動名詞が続く" },
-// 英語（大学受験）追加100問（その4）。questions.js の後、script.js の前に読み込みます。
 
-  { label: "【英語・大学受験】", q: "「abhor」の意味は？", choices: ["〜をひどく嫌う、憎悪する", "〜を吸収する", "〜を放棄する"], answer: 0, explain: "I abhor violence.（私は暴力を心から憎んでいる）。形容詞は abhorrent（忌まわしい）" },
+{ label: "【英語・大学受験】", q: "「abhor」の意味は？", choices: ["〜をひどく嫌う、憎悪する", "〜を吸収する", "〜を放棄する"], answer: 0, explain: "I abhor violence.（私は暴力を心から憎んでいる）。形容詞は abhorrent（忌まわしい）" },
   { label: "【英語・大学受験】", q: "「accentuate」の意味は？", choices: ["〜を受け入れる", "〜を強調する、際立たせる", "〜に加速する"], answer: 1, explain: "The dress accentuates her figure.（そのドレスは彼女の体型を引き立てる）。accent と同語源" },
   { label: "【英語・大学受験】", q: "「acumen」の意味は？", choices: ["酸味", "鋭敏さ", "鋭い洞察力、勘のよさ"], answer: 2, explain: "She has great business acumen.（彼女には優れたビジネス感覚がある）" },
   { label: "【英語・大学受験】", q: "「adjourn」の意味は？", choices: ["（会議などを）休会する、延期する", "〜に隣接する", "〜を調整する"], answer: 0, explain: "The meeting was adjourned until Monday.（会議は月曜まで休会となった）" },
@@ -1933,8 +1931,10 @@ QUESTIONS.push(...[
   { label: "【英語・大学受験】", q: "How ( ) you say such a thing to your mother! 空所に入る語は？", choices: ["may", "should", "dare"], answer: 2, explain: "How dare you ＋ 動詞の原形! は「よくも〜できるものだ」という非難を表す" },
   { label: "【英語・大学受験】", q: "( ) the event that it rains, the game will be canceled. 空所に入る語は？", choices: ["In", "On", "For"], answer: 0, explain: "in the event that 〜 は「〜の場合には」。if よりもかたい表現" },
   { label: "【英語・大学受験】", q: "( ) that he is only twelve, he did very well. 空所に入る語は？", choices: ["Seeing", "Seen", "See"], answer: 0, explain: "seeing that 〜 は「〜であることを考えると、〜なので」。分詞構文由来の接続詞表現" },
+  { label: "【英語・大学受験】", q: "「gullible」の意味は？", choices: ["だまされやすい、お人よしの", "頑固な", "貪欲な"], answer: 0, explain: "He is too gullible to see through their lies.（彼はお人よしすぎて彼らのうそを見抜けない）" },
+  { label: "【英語・大学受験】", q: "「obsequious」の意味は？", choices: ["従順でない", "卑屈な、へつらう", "明白な"], answer: 1, explain: "an obsequious waiter（ぺこぺこする給仕）。人にこびへつらう様子を表す、悪い意味の語" },
 
-
+ 
 
 
 
