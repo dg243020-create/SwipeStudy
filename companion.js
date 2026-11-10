@@ -29,7 +29,8 @@
   const NEAR_RATIO = 0.9;                     // 経験値バーが、この割合をこえたら「あと少し！」
   const BOOST_MIN = 15;                       // 経験値2倍券の長さ（分）
   const PITY_R = 10;                          // この回数のあいだ、レア以上が出なければ、次は必ずレア以上
-  const PITY_SR = 30;                         // この回数のあいだ、スーパーレア以上が出なければ、次は必ずスーパーレア以上
+  const PITY_SR = 50;                         // この回数のあいだ、スーパーレア以上が出なければ、次は必ずスーパーレア以上
+  const PITY_SR_WEIGHTS = [["SR", 7], ["L", 1]];   // 「スーパーレア以上が確定」のときの、スーパーレアと伝説の出やすさ（伝説の出やすさを変えないための値）
   // 宝箱のもらえるタイミング
   const CHEST_DAILY = 1;                      // 今日の目標を達成したとき
   const CHEST_WEEKLY = 2;                     // 週間クエストを達成したとき
@@ -39,9 +40,9 @@
 
   // レア度：w＝出やすさ、shard＝ダブったときにもらえる「かけら」、price＝かけらで交換するのに必要な数
   const RAR = {
-    N:  { label: "ノーマル",     stars: "★",     w: 70, shard: 2,  price: 10 },
+    N:  { label: "ノーマル",     stars: "★",     w: 74, shard: 2,  price: 10 },
     R:  { label: "レア",         stars: "★★",    w: 22, shard: 6,  price: 25 },
-    SR: { label: "スーパーレア", stars: "★★★",   w: 7,  shard: 15, price: 60 },
+    SR: { label: "スーパーレア", stars: "★★★",   w: 3,  shard: 15, price: 60 },
     L:  { label: "伝説",         stars: "★★★★",  w: 1,  shard: 40, price: 150 },
     S:  { label: "教科の相棒",   stars: "📚",     w: 0,  shard: 0,  price: 0 }     // 宝箱には入らない。教科の問題に正解して、仲間にする
   };
@@ -183,6 +184,7 @@
       owned, grow, team,
       shards: num(x.shards), pending: num(x.pending), pityR: num(x.pityR), pitySR: num(x.pitySR),
       title: typeof x.title === "string" ? x.title : "",
+      secrets: { allMax: (x.secrets && x.secrets.allMax) ? 1 : 0 },        // シークレット実績を、解除ずみか
       boostUntil: num(x.boostUntil), gift: x.gift ? 1 : 0, overflow: (typeof x.overflow === "number" && x.overflow > 0) ? x.overflow : 0,
       intro: (x.intro || typeof state.compSeen === "number") ? 1 : 0       // 前のバージョンで遊んでいた人は、紹介を出さない
     };
@@ -286,7 +288,7 @@
       evoWaiting = false;
       whenFree(() => {
         const e = evoQueue.shift();
-        if (e) { if (e.kind === "unlock") showUnlock(e); else showEvolution(e); }
+        if (e) { if (e.kind === "unlock") showUnlock(e); else if (e.kind === "secret") showSecret(e); else showEvolution(e); }
         if (evoQueue.length > 0) runEvoQueue();
       });
     }, 900);
@@ -311,7 +313,7 @@
   }
   function rollRarity(c) {
     let rar;
-    if (c.pitySR >= PITY_SR - 1) rar = pickWeighted([["SR", RAR.SR.w], ["L", RAR.L.w]]);                    // スーパーレア以上が確定
+    if (c.pitySR >= PITY_SR - 1) rar = pickWeighted(PITY_SR_WEIGHTS);                                         // スーパーレア以上が確定
     else if (c.pityR >= PITY_R - 1) rar = pickWeighted([["R", RAR.R.w], ["SR", RAR.SR.w], ["L", RAR.L.w]]);  // レア以上が確定
     else rar = pickWeighted(RAR_ORDER.map((k) => [k, RAR[k].w]));
     const rank = RAR_ORDER.indexOf(rar);
@@ -518,11 +520,13 @@
   // バッジ（script.js の BADGES）と、相棒のきろくが、そのまま称号になる。好きなものを1つ選べる。
   const COMP_TITLES = [
     { id: "col5",   icon: "🗂", name: "コレクター",     desc: "相棒を5種類あつめる",             goal: 5,  unit: "種類", get: () => ownedCount(C()) },
-    { id: "colAll", icon: "📖", name: "図鑑マスター",   desc: "すべての相棒をあつめる",           goal: COMPANIONS.length, unit: "種類", get: () => ownedCount(C()) },
+    { id: "colAll", icon: "📖", name: "図鑑マスター",   desc: "すべての相棒をあつめる",           goal: COMPANIONS.filter((x) => !x.secret).length, unit: "種類", get: () => Object.keys(C().owned).filter((id) => !BY[id].secret).length },
     { id: "max1",   icon: "🏅", name: "極めし者",       desc: "相棒を1匹、レベル30まで育てる",     goal: 1,  unit: "匹", get: () => Object.keys(C().grow).filter((id) => C().grow[id].lv >= MAX_LV).length },
     { id: "max3",   icon: "🏆", name: "三つの極み",     desc: "相棒を3匹、レベル30まで育てる",     goal: 3,  unit: "匹", get: () => Object.keys(C().grow).filter((id) => C().grow[id].lv >= MAX_LV).length },
     { id: "leg",    icon: "🌈", name: "伝説の持ち主",   desc: "伝説の相棒を手に入れる",           goal: 1,  unit: "匹", get: () => Object.keys(C().owned).filter((id) => BY[id].rar === "L").length },
     { id: "slot3",  icon: "🐾", name: "三匹使い",       desc: "3つめの枠を解放する（自分がLv.30）", goal: 1,  unit: "",   get: () => (slotsOpen() >= 3 ? 1 : 0) },
+    // シークレット：獲得するまで、名前も条件も見えない
+    { id: "secretAll", icon: "🌌", name: "相棒の頂点", desc: "すべての相棒をあつめて、全員をレベル30まで育てた", goal: 1, unit: "", secret: true, get: () => (C().secrets.allMax ? 1 : 0) },
     { id: "subAll", icon: "🎓", name: "教科の友",       desc: "4つの教科の相棒を、すべて仲間にする", goal: 4,  unit: "匹", get: () => COMPANIONS.filter((x) => x.subject && C().owned[x.id]).length }
   ];
   function allTitles() {
@@ -532,7 +536,7 @@
     } catch (e) { /* バッジが読めなくても、相棒の称号は出す */ }
     COMP_TITLES.forEach((t) => {
       const v = t.get();
-      list.push({ id: "c:" + t.id, icon: t.icon, name: t.name, desc: t.desc, earned: v >= t.goal, cur: Math.min(v, t.goal), goal: t.goal, unit: t.unit });
+      list.push({ id: "c:" + t.id, icon: t.icon, name: t.name, desc: t.desc, earned: v >= t.goal, cur: Math.min(v, t.goal), goal: t.goal, unit: t.unit, secret: !!t.secret });
     });
     return list;
   }
@@ -558,13 +562,40 @@
     });
     if (got.length === 0) grid.appendChild(div("comp-line", "まだ称号がありません。勉強して、バッジを集めよう！"));
     box.appendChild(grid);
-    const next = list.filter((t) => !t.earned).sort((a, b) => (b.cur / b.goal) - (a.cur / a.goal)).slice(0, 6);
+    const next = list.filter((t) => !t.earned && !t.secret).sort((a, b) => (b.cur / b.goal) - (a.cur / a.goal)).slice(0, 6);
     if (next.length > 0) {
       box.appendChild(div("comp-line", "もうすぐ獲得できる称号"));
       next.forEach((t) => box.appendChild(div("comp-line", `🔒 ${t.icon} ${t.name}：${t.desc}（${t.cur}/${t.goal}${t.unit}）`)));
     }
+    const hidden = list.filter((t) => t.secret && !t.earned).length;
+    if (hidden > 0) box.appendChild(div("comp-line", `🔒 ？？？　シークレット実績が ${hidden}個 あります`));
     box.appendChild(button("comp-sub", "← 相棒メニューにもどる", () => showPanel(false)));
     box.appendChild(button("comp-close", "とじる", closeOverlay));
+  }
+
+  // シークレット実績を解除したとき
+  function showSecret(e) {
+    const t = COMP_TITLES.find((x) => x.id === "secretAll");
+    const box = openOverlay();
+    box.appendChild(div("comp-title", "🌟 シークレット実績 解除！"));
+    box.appendChild(bigEmoji(t.icon, "pop g-L"));
+    box.appendChild(div("comp-name", t.name));
+    box.appendChild(div("comp-line", t.desc));
+    box.appendChild(div("comp-line", "称号として、つけられるようになりました"));
+    fire(260, [523, 659, 784, 1047, 1319, 1568]);
+    box.appendChild(button("comp-sub", "🏷 称号をつける", () => { C().title = "c:" + t.id; persist(); refresh(); showTitles(); }));
+    box.appendChild(button("comp-close", "とじる", closeOverlay));
+  }
+  function checkSecrets() {                    // すべての相棒（シークレット以外）を持っていて、全員がレベル30
+    const c = C();
+    if (c.secrets.allMax) return;
+    const list = COMPANIONS.filter((x) => !x.secret);
+    if (list.every((x) => c.owned[x.id] && growOf(x.id).lv >= MAX_LV)) {
+      c.secrets.allMax = 1;
+      evoQueue.push({ kind: "secret", key: "allMax" });
+      persist();
+      runEvoQueue();
+    }
   }
 
   // ---------- 宝箱を開ける ----------
@@ -721,6 +752,7 @@
 
     checkEvolutions();                                            // 進化していたら、演出を出す
     checkSubjectUnlocks();                                        // 教科の相棒が仲間になったか調べる
+    checkSecrets();                                               // シークレット実績を解除したか調べる
     if (!c.intro) {                                               // はじめて：相棒の紹介を出す
       c.intro = 1;
       persist();
