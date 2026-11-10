@@ -734,17 +734,36 @@
     }
   }
 
-  // ---------- スタートメニューに「相棒」のボタンを足す ----------
+  // ---------- スタートメニュー：ボタンに色をつけて、いちばん下に「相棒」を足す ----------
+  // 色の変え方：[ボタンの名前に入っている言葉, 背景の色, 文字の色]
+  const MENU_COLORS = [
+    ["つづきから",   "#3ddc84", "#0d2a1a"],
+    ["教科をえらぶ", "#6ea8ff", "#0d1f40"],
+    ["ボス戦",       "#ff5470", "#ffffff"],
+    ["昨日のテスト", "#b78bff", "#22104a"],
+    ["バッジ",       "#ff9a3d", "#3a1f05"],
+    ["統計",         "#2fc4c4", "#05302f"],
+    ["ランキング",   "#ffcf3f", "#1a1033"],
+    ["間違いの復習", "#ff7ad9", "#3f0f33"]
+  ];
   function addMenuButton() {
     const box = menu.firstChild;
     if (!box) return;
-    const colsList = Array.from(box.children).filter((x) => x.className === "mn-cols");
-    const cols = colsList[1];                                     // 2つめ：左（勉強）と右（バッジなど）
-    const target = (cols && cols.children[1]) ? cols.children[1] : box;
+    // ボタンに色をつける（押せないボタンは、script.js の暗い色のまま）
+    Array.from(box.querySelectorAll("button.mn-btn")).forEach((b) => {
+      if (b.disabled) return;
+      const text = (b.firstChild && b.firstChild.textContent) || "";
+      const hit = MENU_COLORS.find((m) => text.indexOf(m[0]) >= 0);
+      if (hit) { b.style.background = hit[1]; b.style.color = hit[2]; }
+    });
+    // いちばん下の行に、2列ぶんの横長で「相棒」を置く（文字は真ん中）
     const c = C(), comp = mainComp(), g = growOf(comp.id);
     const b = menuBtn(`${formOf(comp, stageIndex(g.lv))} 相棒`,
       `${comp.name} Lv.${g.lv}　🎁${c.pending}`, () => showPanel(false));
-    target.insertBefore(b, target.firstChild);
+    b.style.textAlign = "center";
+    b.style.background = "linear-gradient(90deg, #ff7ad9, #b78bff, #6ea8ff)";
+    b.style.color = "#1a1033";
+    box.appendChild(b);
     fitMenu(box);
   }
 
