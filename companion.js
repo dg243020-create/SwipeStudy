@@ -863,4 +863,36 @@
   state.comp = cleanComp(state.comp);              // 起動したときに、保存データを一度きれいにする
   try { refresh(); } catch (e) { /* 無視 */ }      // 起動した直後の1回
   try { if (menuOpen && lastMenuView === "main") renderMenu("main"); } catch (e) { /* 起動時に出ているスタートメニューにも、相棒のボタンを足す */ }
+  
+  // ---------- 背景の画像（ボス戦だけ Boss、ほかは自由に切りかわる） ----------
+  const BG_BOSS = "asset/Boss.jpg";
+  const BG_FREE = ["asset/haikei.PNG", "asset/Engel.png", "asset/Unlimited.png"];   // 自由に使う画像（増やしてOK）
+  const bgCss = document.createElement("style");
+  bgCss.textContent = `
+:root { --bg-img: url("${BG_FREE[0]}"); }
+body::before { background: linear-gradient(rgba(14,7,32,${BG_DIM}), rgba(14,7,32,${BG_DIM})), var(--bg-img) center / cover no-repeat, var(--bg); }`;
+  (document.head || document.body).appendChild(bgCss);
+  let bgKey = "", bgWant = "";
+  function applyBg(force) {
+    const isBoss = mode === "test" && test && (test.kind === "boss" || test.kind === "stage");
+    let url;
+    if (isBoss) {
+      if (bgKey === "boss") return;
+      url = BG_BOSS; bgKey = "boss";
+    } else {
+      if (bgKey === "free" && !force) return;
+      url = BG_FREE[Math.floor(Math.random() * BG_FREE.length)]; bgKey = "free";
+    }
+    bgWant = url;
+    const im = new Image();
+    im.onload = () => { if (bgWant === url) document.documentElement.style.setProperty("--bg-img", `url("${url}")`); };   // 読み込めた画像だけ使う
+    im.src = url;
+  }
+  const baseUpdateHud2 = updateHud;
+  updateHud = function () { baseUpdateHud2(); try { applyBg(false); } catch (e) { /* 無視 */ } };
+  const baseRebuildFeed = rebuildFeed;
+  rebuildFeed = function () { baseRebuildFeed(); try { applyBg(true); } catch (e) { /* 無視 */ } };
+  try { applyBg(true); } catch (e) { /* 無視 */ }
+  
+
 })();
