@@ -860,9 +860,6 @@
       try { refresh(); } catch (e) { /* 無視 */ }
     };
   }
-  state.comp = cleanComp(state.comp);              // 起動したときに、保存データを一度きれいにする
-  try { refresh(); } catch (e) { /* 無視 */ }      // 起動した直後の1回
-  try { if (menuOpen && lastMenuView === "main") renderMenu("main"); } catch (e) { /* 起動時に出ているスタートメニューにも、相棒のボタンを足す */ }
   
   // ---------- 背景の画像（ボス戦だけ Boss、ほかは自由に切りかわる） ----------
   const BG_BOSS = "asset/Boss.jpg";
@@ -893,6 +890,11 @@ body::before { background: linear-gradient(rgba(14,7,32,${BG_DIM}), rgba(14,7,32
   const baseRebuildFeed = rebuildFeed;
   rebuildFeed = function () { baseRebuildFeed(); try { applyBg(true); } catch (e) { /* 無視 */ } };
   try { applyBg(true); } catch (e) { /* 無視 */ }
+
+  state.comp = cleanComp(state.comp);              // 起動したときに、保存データを一度きれいにする
+  try { refresh(); } catch (e) { /* 無視 */ }      // 起動した直後の1回
+  try { if (menuOpen && lastMenuView === "main") renderMenu("main"); } catch (e) { /* 起動時に出ているスタートメニューにも、相棒のボタンを足す */ }
+
   
 
 })();
