@@ -840,7 +840,7 @@
   const baseRenderMenu = renderMenu;
   renderMenu = function (view) {
     baseRenderMenu(view);
-    try { if (!view || view === "main") addMenuButton(); } catch (e) { /* 無視 */ }
+    try { if (!view || view === "main") { addLogo(); addMenuButton(); } } catch (e) { /* 無視 */ }
   };
   const baseAchieveGoal = achieveGoal;             // 今日の目標を達成 → 宝箱
   achieveGoal = function () {
