@@ -160,6 +160,6 @@ html, body {
 
 /* 広い画面（パソコン・iPad）だけ、ロゴの大きさを変える */
 .ui-wide .mn-logo {
-  height: clamp(30px, 5vh, 56px);
+  height: clamp(30px, 6.5vh, 72px);
   max-width: 50%;
 }
