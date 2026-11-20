@@ -142,8 +142,16 @@ html, body {
 @keyframes slideup { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* スタートメニューのロゴ（asset/Swipe.png） */
+/* スタートメニューのロゴ（asset/Swipe.png）：背景透過のまま、大きく表示 */
 .mn-logo {
-  height: 46px; width: auto; max-width: 100%; display: block;
-  background: #fff; border-radius: 12px; padding: 3px 10px;
-  box-shadow: 0 0 14px rgba(255,255,255,.25);
+  display: block;
+  width: min(86vw, 560px);
+  height: auto;
+  max-width: 100%;
+  margin: 0 auto 4px;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 0 10px rgba(255,255,255,.9)) drop-shadow(0 0 22px rgba(255,255,255,.55));
 }
