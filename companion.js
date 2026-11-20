@@ -778,6 +778,23 @@
     ["ランキング",   "#ffcf3f", "#1a1033"],
     ["間違いの復習", "#ff7ad9", "#3f0f33"]
   ];
+  
+
+    // ---------- ロゴ（スタートメニューの上に表示） ----------
+  const LOGO = "asset/Swipe.png";
+  function addLogo() {
+    const box = menu.firstChild;
+    const title = box && box.querySelector(".mn-title");
+    if (!title) return;
+    const im = document.createElement("img");
+    im.src = LOGO;
+    im.alt = "SwipeStudy";
+    im.className = "mn-logo";
+    im.addEventListener("error", () => { im.remove(); title.textContent = "📚 SwipeStudy"; });   // 読み込めなかったら、元の文字にもどす
+    title.textContent = "";
+    title.appendChild(im);
+  }
+
   function addMenuButton() {
     const box = menu.firstChild;
     if (!box) return;
