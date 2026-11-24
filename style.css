@@ -143,23 +143,15 @@ html, body {
 
 /* スタートメニューのロゴ（asset/Swipe.png） */
 /* スタートメニューのロゴ（asset/Swipe.png）：背景透過のまま、大きく表示 */
-
-/* スタートメニューのロゴ（asset/Swipe.png）：背景透過のまま、スクロールしない大きさ */
 .mn-logo {
   display: block;
-  height: clamp(44px, 9vh, 96px);
-  width: auto;
-  max-width: 70%;
-  margin: 0 auto 2px;
+  width: min(86vw, 560px);
+  height: auto;
+  max-width: 100%;
+  margin: 0 auto 4px;
   background: none;
   padding: 0;
   border-radius: 0;
   box-shadow: none;
-  filter: drop-shadow(0 0 8px rgba(255,255,255,.9)) drop-shadow(0 0 18px rgba(255,255,255,.5));
-}
-
-/* 広い画面（パソコン・iPad）だけ、ロゴの大きさを変える */
-.ui-wide .mn-logo {
-  height: clamp(30px, 6.5vh, 72px);
-  max-width: 50%;
+  filter: drop-shadow(0 0 10px rgba(255,255,255,.9)) drop-shadow(0 0 22px rgba(255,255,255,.55));
 }
