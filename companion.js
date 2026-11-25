@@ -87,7 +87,7 @@
 .rar-SR { border-color: #ffcf3f !important; box-shadow: 0 0 10px #ffcf3f; }
 .rar-L  { border-color: #ff7ad9 !important; animation: compRainbow 2.4s linear infinite; }
 .rar-S  { border-color: #3ddc84 !important; box-shadow: 0 0 8px #3ddc84; }
-.comp-chest { position: fixed; left: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 35; display: none;
+.comp-chest { position: fixed; left: 10px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 35; display: none;
   font: inherit; font-size: 13px; font-weight: 800; color: #1a1033; background: #ffcf3f; border: 0; border-radius: 999px; padding: 8px 12px; cursor: pointer;
   animation: compBob 1.2s infinite; box-shadow: 0 0 12px rgba(255,207,63,.8); }
 .comp-ov { position: fixed; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center; padding: 16px;
