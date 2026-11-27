@@ -141,7 +141,6 @@ html, body {
 }
 @keyframes slideup { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* スタートメニューのロゴ（asset/Swipe.png） */
 /* スタートメニューのロゴ（asset/Swipe.png）：背景透過のまま、大きく表示 */
 .mn-logo {
   display: block;
@@ -154,4 +153,15 @@ html, body {
   border-radius: 0;
   box-shadow: none;
   filter: drop-shadow(0 0 10px rgba(255,255,255,.9)) drop-shadow(0 0 22px rgba(255,255,255,.55));
+}
+
+/* iPadなど横長画面だけ：高さ基準にして、スクロールなしで収まる最大サイズにする */
+@media (min-width: 700px) and (orientation: landscape) {
+  .mn-logo {
+    width: auto;
+    height: clamp(90px, calc(100vh - 540px), 300px);
+    height: clamp(90px, calc(100dvh - 540px), 300px);
+    max-width: min(86vw, 560px);
+    object-fit: contain;
+  }
 }
